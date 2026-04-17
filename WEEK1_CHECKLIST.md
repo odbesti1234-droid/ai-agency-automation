@@ -112,11 +112,12 @@ mypy>=1.13.0
 - 오이도92 / 플랜B 모두 엔드투엔드 성공 확인 ✅
 → **완료 (2026-04-17)**
 
-### ⬜ Action 4.3 — Slack Webhook 🧑‍💻 **[사용자 개입]**
-- 유선우 Slack 워크스페이스에 incoming webhook 추가
-- `.env` `SLACK_WEBHOOK_URL` 저장 (에이전시 운영 채널용)
+### ✅ Action 4.3 — Slack Webhook 🧑‍💻 **[사용자 개입]**
+- 유선우 Slack 워크스페이스에 incoming webhook 추가 완료
+- `.env` `SLACK_WEBHOOK_URL` 저장 완료
+- 오이도92 오케스트레이터 풀 실행 → Slack 알림 수신 확인 ✅
 - 클라이언트별 채널 분기는 `clients.slack_channel_webhook` 컬럼으로 Phase 2에서
-→ **유선우 Webhook 생성 · Claude 저장·사용**
+→ **완료 (2026-04-17)**
 
 ---
 
