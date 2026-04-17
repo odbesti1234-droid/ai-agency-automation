@@ -235,63 +235,106 @@ Agents: 없음
 
 ---
 
-## 🎨 designer
+## 🖼️ card_designer (Active — 3-Agent Pipeline)
 
 ### Identity
 ```
-직함: 비주얼 디자인 자동화 전문가
-임무: 승인된 콘텐츠 아이디어를 Canva/Figma로 시각화한다
+직함: 수석 카드뉴스 그래픽 디자이너 (3-에이전트 파이프라인)
+임무: 승인된 콘텐츠 아이디어 → HTML/CSS 생성 → PNG 렌더링 → Supabase 업로드 → public URL 반환
 절대 안 하는 것: 콘텐츠 아이디어를 변경하거나 Instagram에 직접 게시하는 것
-모델: claude-sonnet-4-6 (도구 호출 + 창의적 지시 → 제2조)
+모델: claude-opus-4-6 (10만+ 팔로워 수준 프리미엄 디자인 → 제2조)
 ```
 
-### System Prompt 구조
+### 3-Agent 파이프라인
+```
+Agent A — HTML 생성 (claude-opus-4-6)
+  입력: content_idea + brand_voice (색상·폰트·무드·키워드)
+  출력: 완전한 HTML/CSS 문서 (1080×1080, Google Fonts Noto Sans KR, 브랜드 색상)
+  품질 기준: 저장율 30%, 공유율 15% 달성 수준
+
+Agent B — PNG 렌더링 (Playwright Headless Chromium)
+  입력: HTML 문자열
+  출력: PNG bytes (1080×1080px, ~300KB)
+  기술: sync_playwright(), viewport=1080×1080, wait 1500ms (Google Fonts 로딩)
+
+Agent C — Storage 업로드 (Supabase REST API)
+  입력: PNG bytes + object_path ({client_id}/{idea_id}.png)
+  출력: public URL (https://{supabase_url}/storage/v1/object/public/card-news/...)
+  버킷: card-news (public, 자동 생성)
+```
+
+### System Prompt 핵심 (Agent A)
 ```
 [ROLE]
-너는 소셜미디어 비주얼 디자인 자동화 전문가다.
-Canva와 Figma MCP를 사용해 콘텐츠 아이디어를 실제 디자인으로 변환한다.
-
-[MISSION]
-주어진 콘텐츠 아이디어의 visual_direction을 바탕으로
-Instagram에 최적화된 비주얼 에셋을 생성하고 URL을 반환한다.
-
-[CONTEXT]
-클라이언트 브랜드킷: {brand_kit_json}
-콘텐츠 포맷: {content_type}
-비주얼 지시: {visual_direction}
-참고 레퍼런스: {reference_urls}
+너는 대한민국 인스타그램 10만+ 팔로워 계정의 수석 그래픽 디자이너다.
+저장율 30%, 공유율 15% 이상을 달성하는 카드뉴스를 HTML/CSS로 만든다.
 
 [RULES]
-반드시:
-- 포맷별 규격 준수 (Reel: 9:16, Feed: 1:1, Story: 9:16)
-- 브랜드 컬러·폰트 사용
-- 텍스트는 3초 안에 읽힐 양만
+- 1080×1080px 정사각형, 반드시 완전한 HTML 문서 반환
+- 브랜드 primary/secondary 색상 사용
+- Google Fonts Noto Sans KR 로딩
+- 훅 텍스트 크고 명확하게 배치
+- 콘텐츠 타입별 레이아웃: 릴스=세로형, 피드=정방형, 스토리=세로형
+```
 
-절대 금지:
-- 저작권 있는 이미지 사용
-- 브랜드 가이드라인 위반 색상
-- 텍스트 과다 (3줄 이상)
+### Output Contract
+```yaml
+outputs:
+  status: enum[completed, partial, skipped, error]
+  designed: int  # 생성된 카드뉴스 수
+  results:
+    - idea_id: uuid
+      design_url: "https://{supabase_url}/storage/v1/object/public/card-news/{path}"
+      png_size_bytes: int
+```
 
-[OUTPUT]
-{
-  "design_url": "https://canva.com/...",
-  "thumbnail_url": "https://...",
-  "format": "reel | feed | story",
-  "dimensions": {"width": 1080, "height": 1920},
-  "design_tool": "canva | figma",
-  "creation_note": "디자인 과정 메모"
-}
+### Permissions (제3조)
+```
+DB: L1 — content_ideas의 design_url, status UPDATE만 (approved → design_ready)
+External: Supabase Storage REST API (L2, 쓰기), Playwright headless (로컬 렌더링)
+Agents: 없음
+```
 
-[FAILURE]
-Canva API 오류 → Figma로 폴백
-브랜드킷 없음 → 기본 템플릿 사용 + 유선우에게 브랜드킷 요청 알림
+### Slack 통합
+```
+design_url이 Supabase public URL (.png)인 경우 → Slack image block으로 인라인 렌더링
+버튼: "✅ 최종 승인 · 게시" / "❌ 재생성"
+해시태그 미리보기 포함
+```
+
+### 실행 위치
+```
+src/agents/card_designer.py  — 직접 실행 가능
+src/agents/designer.py       — 우선순위 #1로 호출 (Canva fallback 전)
+src/agents/orchestrator.py   — Step 4: auto-approve 후 즉시 호출
+src/scheduler/cron.py        — designer_poll_job() 30분 간격으로 자동 실행
+```
+
+---
+
+## 🎨 designer (Fallback — Canva/Brief)
+
+### Identity
+```
+직함: 비주얼 디자인 자동화 전문가 (card_designer 폴백)
+임무: card_designer 실패 시 Canva CLI 또는 텍스트 디자인 브리프로 대체
+절대 안 하는 것: 콘텐츠 아이디어를 변경하거나 Instagram에 직접 게시하는 것
+모델: claude-sonnet-4-6 (Canva CLI 호출 → 제2조)
+우선순위: card_designer 성공 시 호출되지 않음
+```
+
+### Fallback 체인
+```
+1순위: card_designer (HTML→PNG→Supabase) ← 현재 기본값
+2순위: Canva CLI (CANVA_ACCESS_TOKEN 있을 때)
+3순위: 텍스트 디자인 브리프 JSON (design-brief:// URI)
 ```
 
 ### Permissions (제3조)
 ```
 DB: L1 — content_ideas의 design_url, status UPDATE만 (designing → design_ready)
-External: Canva MCP (L3), Figma MCP (L3)
-Agents: 없음
+External: Canva MCP (L3, optional), claude CLI subprocess (Canva fallback)
+Agents: card_designer (우선 호출)
 ```
 
 ---
@@ -344,34 +387,41 @@ Agents: 없음
 ## 🔗 에이전트 실행 순서도
 
 ```
-[Cron Trigger]
+[Cron 09:00 KST]
      │
      ▼
-main_orchestrator ──────────────────────────────────┐
-     │                                               │
-     ▼                                               │
-trend_scanner                                        │
-     │ trend_snapshots 저장                           │
-     ▼                                               │
-content_generator                                    │
-     │ content_ideas 저장 (status=pending)            │
-     ▼                                               │
-[HUMAN GATE #1] ← Slack 알림                         │
-유선우 승인/거부                                      │
-     │ (approved)                                    │
-     ▼                                               │
-designer                                             │
-     │ design_url 업데이트 (status=design_ready)      │
-     ▼                                               │
-[HUMAN GATE #2] ← Slack 이미지 미리보기               │
-유선우 최종 승인                                      │
-     │ (human_approved=true)                          │
-     ▼                                               │
-publisher [W5~]                                      │
-     │ IG 게시 (status=published)                     │
-     ▼                                               │
-reporter (매주 일요일)                                │
-     │ 주간 리포트 → Slack                            │
-     └─────────────────────────────────────────────┘
+main_orchestrator ──────────────────────────────────────┐
+     │ Step 1                                            │
+     ▼                                                   │
+trend_scanner                                            │
+     │ trend_snapshots 저장                               │
+     ▼                                                   │
+content_generator  (Step 2)                              │
+     │ content_ideas 저장 (status=pending)                │
+     ▼                                                   │
+[Slack 알림 — 콘텐츠 아이디어 3개]  (Step 3)             │
+     │ orchestrator: auto-approve → status=approved      │
+     ▼                                                   │
+card_designer  (Step 4 — 자동)                           │
+  ├─ Agent A: Claude Opus → HTML/CSS (1080×1080)         │
+  ├─ Agent B: Playwright → PNG bytes                     │
+  └─ Agent C: Supabase Storage → public URL              │
+     │ design_url 업데이트 (status=design_ready)          │
+     ▼                                                   │
+[Slack 이미지 인라인 미리보기]                            │
+유선우 최종 승인 버튼                                     │
+     │ (human_approved=true)                              │
+     ▼                                                   │
+publisher [W5~]                                          │
+     │ IG 게시 (status=published)                         │
+     ▼                                                   │
+reporter (매주 일요일 18:00 KST)                         │
+     │ 주간 리포트 → Slack                               │
+     └───────────────────────────────────────────────────┘
               피드백 → content_generator 학습
+
+[Cron 30분 간격 — designer_poll_job]
+     │ status=approved AND design_url IS NULL 감지
+     ▼
+designer → card_designer (우선) → Canva fallback → 브리프 fallback
 ```
