@@ -76,7 +76,7 @@
 - `human_approved = true` 로 플래그 (publisher 게이트)
 → **Claude 직접**
 
-### ⬜ Action 8.2 — 오이도92 풀 파이프라인 테스트
+### ✅ Action 8.2 — 오이도92 풀 파이프라인 테스트
 - `scan → generate → content 승인 → design → design 승인` 전체 흐름
 - Supabase에서 상태 전이 확인: `pending → approved → designing → design_ready`
 - 두 클라이언트(오이도92, 플랜B) 동시 실행 검증
@@ -86,13 +86,13 @@
 
 ## 📅 Day 9 — GitHub 자동 배포 연동
 
-### ⬜ Action 9.1 — GitHub → Railway 자동 배포
+### ✅ Action 9.1 — GitHub → Railway 자동 배포
 - Railway 프로젝트에 GitHub repo 연결
 - `main` 브랜치 push 시 자동 재배포
 - `railway up` 수동 배포 불필요하게
 → **Claude 직접 (Railway CLI or MCP)**
 
-### ⬜ Action 9.2 — 주간 reporter 에이전트 기초 구현
+### ✅ Action 9.2 — 주간 reporter 에이전트 기초 구현
 - `src/agents/reporter.py` 스켈레톤
   - 현재는 Supabase `content_ideas` 기반 간단 통계
   - W6에서 Instagram Insights 연결 예정
@@ -103,12 +103,12 @@
 
 ## 🎯 W2 Done Criteria
 
-- [ ] Slack 알림에 승인/거부 버튼 → 클릭 시 DB 상태 변경
-- [ ] approved 콘텐츠 → designer 자동 실행 → Canva 디자인 생성
-- [ ] Slack에 디자인 이미지 미리보기 + 최종 승인 버튼
-- [ ] `content_ideas.status` 상태 머신 전체 작동: pending → approved → design_ready
-- [ ] 두 클라이언트(F&B + 부동산) 독립 파이프라인 동작 확인
-- [ ] GitHub push → Railway 자동 배포
+- [x] Slack 알림에 승인/거부 버튼 → 클릭 시 DB 상태 변경
+- [x] approved 콘텐츠 → designer 자동 실행 → Canva 디자인 생성
+- [x] Slack에 디자인 이미지 미리보기 + 최종 승인 버튼
+- [x] `content_ideas.status` 상태 머신 전체 작동: pending → approved → design_ready
+- [x] 두 클라이언트(F&B + 부동산) 독립 파이프라인 동작 확인
+- [x] GitHub push → Railway 자동 배포
 
 ---
 
