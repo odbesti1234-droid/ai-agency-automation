@@ -138,11 +138,11 @@ def run(client_slug: str) -> dict:
             messages=[{"role": "user", "content": user_message}],
         )
 
+        # 마지막 text 블록이 JSON (web_search tool 응답 이후에 위치)
         raw_text = ""
         for block in response.content:
             if hasattr(block, "text") and block.text.strip():
                 raw_text = block.text.strip()
-                break
 
         # JSON 추출
         strategy_data = _parse_strategy(raw_text, client_name)

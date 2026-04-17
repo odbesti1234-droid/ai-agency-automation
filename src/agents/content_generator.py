@@ -128,7 +128,7 @@ def generate(client_slug: str, topic: str | None = None, count: int = 3) -> list
     try:
         response = _client.messages.create(
             model=_MODEL,
-            max_tokens=6000,
+            max_tokens=8000,
             system=[
                 {
                     "type": "text",
