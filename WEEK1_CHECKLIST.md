@@ -76,39 +76,41 @@ mypy>=1.13.0
 
 ## 📅 Day 3 — content_generator 포팅 (MVP)
 
-### ⬜ Action 3.1 — 기존 `인스타바이럴` 스킬 읽기
-`.claude/skills/instagram-viral/SKILL.md` 분석 → 핵심 로직 추출.
-→ **Claude 직접**
+### ✅ Action 3.1 — 기존 `인스타바이럴` 스킬 읽기
+훅 패턴(숫자/반전/공감/긴박/호기심), 콘텐츠 기둥 5개, 스크립트 구조 추출
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 3.2 — content_generator 구현
-- **시그니처:** `generate(client_slug: str, topic: str | None = None) -> list[ContentIdea]`
-- 클라이언트 `brand_voice` 조회 → 프롬프트에 주입
-- Output: 릴스 아이디어 3개 (훅 + 캡션 + 스크립트)
-- Supabase `content_ideas` 저장 (`client_id` 필수)
-→ **Claude 직접**
+### ✅ Action 3.2 — content_generator 구현
+- Sonnet 4.6 + prompt_cache (system_prompt ephemeral)
+- brand_voice DB 조회 → 프롬프트 주입 → JSON 파싱 → content_ideas INSERT
+- agent_runs 비용·토큰 기록 포함
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 3.3 — 두 업종 교차 테스트
-```bash
-python -m src.agents.content_generator --client oedo92 --topic "조개구이 봄 성수기"
-python -m src.agents.content_generator --client father_plan_b --topic "역세권 소형 매물 노출"
-```
-두 업종 결과 톤이 분명히 다른지 확인 → **아버지 플랜 B 등록은 W3로 미뤄도 됨. Day 3에선 오이도92만 필수.**
-→ **Claude 직접 · 결과 유선우 보고**
+### ✅ Action 3.3 — 두 업종 교차 테스트
+- 오이도92: 릴스 2 + 피드 1 (confidence 0.85~0.88) — 담백한 해산물 감성
+- 플랜비: 릴스 2 + 피드 1 (confidence 0.87~0.91) — 수치·차분 부동산 톤
+- 두 업종 톤 확연히 다름 ✅
+→ **완료 (2026-04-17)**
 
 ---
 
 ## 📅 Day 4 — trend_scanner + 오케스트레이션
 
-### ⬜ Action 4.1 — trend_scanner 구현
-- **시그니처:** `scan(client_slug: str) -> TrendSnapshot`
-- 클라이언트 `industry` 로 검색 키워드 분기
-- WebSearch (Anthropic 내장 or Tavily) 사용
-→ **Claude 직접**
+### ✅ Action 4.1 — trend_scanner 구현
+- **시그니처:** `scan(client_slug: str) -> dict` (trend_snapshots INSERT 포함)
+- 클라이언트 `industry` 로 검색 키워드 분기 (`_INDUSTRY_KEYWORDS` 매핑)
+- Anthropic `web_search_20250305` 내장 툴 사용 (Haiku 4.5, max_tokens=2048)
+- `_parse_snapshot()` 헬퍼로 JSON 파싱 견고성 확보
+- trend_snapshots 스키마 맞춤: `trends` (jsonb) + `raw_sources` (jsonb)
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 4.2 — main_orchestrator 체인
+### ✅ Action 4.2 — main_orchestrator 체인
 `scan → generate → save → Slack 알림` 풀 워크플로우.
-클라이언트별로 독립 실행.
-→ **Claude 직접**
+- `--client {slug}` 단일 실행 + `--all-active` 전체 순회 모드
+- topic_hint 120자 절삭으로 content_generator 토큰 과부하 방지
+- 오케스트레이터 trigger_type="cron" (DB CHECK 제약 준수)
+- 오이도92 / 플랜B 모두 엔드투엔드 성공 확인 ✅
+→ **완료 (2026-04-17)**
 
 ### ⬜ Action 4.3 — Slack Webhook 🧑‍💻 **[사용자 개입]**
 - 유선우 Slack 워크스페이스에 incoming webhook 추가
