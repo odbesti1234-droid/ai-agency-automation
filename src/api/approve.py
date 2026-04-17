@@ -67,13 +67,12 @@ async def approve(
     try:
         rows = db.select("content_ideas", filters={"id": idea_id})
         if not rows:
-            raise HTTPException(status_code=404, detail="Content idea not found")
+            return HTMLResponse(content=_html_page("없음", "해당 콘텐츠를 찾을 수 없습니다.", success=False))
 
         idea = rows[0]
         current_status = idea.get("status", "")
 
         if stage == "design":
-            # 디자인 최종 승인 단계
             allowed_statuses = ("design_ready",)
             if current_status not in allowed_statuses:
                 return HTMLResponse(
@@ -97,7 +96,6 @@ async def approve(
                     content=_html_page("디자인 거부", "디자인이 거부되었습니다.", success=False)
                 )
         else:
-            # 콘텐츠 1차 승인 단계
             if current_status not in ("pending",):
                 return HTMLResponse(
                     content=_html_page(
@@ -116,6 +114,12 @@ async def approve(
                     success=(action == "approved"),
                 )
             )
+    except Exception as e:
+        print(f"[approve] 오류: {e}")
+        return HTMLResponse(
+            content=_html_page("처리 오류", f"서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", success=False),
+            status_code=500,
+        )
     finally:
         db.close()
 
