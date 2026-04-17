@@ -2,6 +2,7 @@
 
 환경변수:
     SLACK_WEBHOOK_URL — 글로벌 웹훅 URL (기본 채널)
+    APPROVAL_BASE_URL — 승인 API base URL (버튼 링크)
 
 클라이언트별 채널 분기는 Phase 2에서 clients.slack_channel_webhook 컬럼으로 구현 예정.
 """
@@ -13,6 +14,8 @@ import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from src.api.approve import make_approve_url
 
 
 def send(
@@ -47,34 +50,109 @@ def notify_content_ready(
     ideas: list[dict],
     webhook_url: str | None = None,
 ) -> bool:
-    """콘텐츠 생성 완료 알림."""
-    idea_lines = ""
-    for i, idea in enumerate(ideas[:3], 1):
-        hook = idea.get("hook", "")[:60]
-        ctype = idea.get("content_type", "?")
-        score = idea.get("confidence_score", 0)
-        idea_lines += f"\n  {i}. [{ctype}] {hook}... (confidence: {score})"
+    """콘텐츠 생성 완료 알림 — 각 아이디어마다 승인/거부 버튼 포함."""
+    text = f"*[{client_name}] 오늘의 콘텐츠 {content_count}개 준비됨*"
 
-    text = (
-        f"*[{client_name}] 오늘의 콘텐츠 {content_count}개 준비됨*\n"
-        f"{idea_lines}\n\n"
-        f"Supabase에서 승인/거부 → `content_ideas` 테이블 status 변경"
-    )
-
-    blocks = [
+    blocks: list[dict] = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": f"[{client_name}] 콘텐츠 {content_count}개 생성 완료"},
         },
-        {
+    ]
+
+    for i, idea in enumerate(ideas[:3], 1):
+        idea_id = idea.get("id", "")
+        hook = idea.get("hook", "")[:80]
+        ctype = idea.get("content_type", "?")
+        score = idea.get("confidence_score", 0)
+
+        blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": idea_lines or "아이디어 없음"},
-        },
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{i}. [{ctype}]* {hook}\n_confidence: {score}_",
+            },
+        })
+
+        if idea_id:
+            approve_url = make_approve_url(idea_id, "approved")
+            reject_url = make_approve_url(idea_id, "rejected")
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "✅ 승인"},
+                        "style": "primary",
+                        "url": approve_url,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "❌ 거부"},
+                        "style": "danger",
+                        "url": reject_url,
+                    },
+                ],
+            })
+        blocks.append({"type": "divider"})
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def notify_design_ready(
+    client_name: str,
+    ideas: list[dict],
+    webhook_url: str | None = None,
+) -> bool:
+    """디자인 완료 알림 — 각 아이디어마다 최종 승인/거부 버튼 포함."""
+    text = f"*[{client_name}] 디자인 {len(ideas)}개 준비됨 — 최종 승인 대기*"
+
+    blocks: list[dict] = [
         {
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": "Supabase `content_ideas` 테이블에서 승인/거부 가능"}],
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"[{client_name}] 디자인 {len(ideas)}개 완료"},
         },
     ]
+
+    for i, idea in enumerate(ideas[:3], 1):
+        idea_id = idea.get("id", "")
+        hook = idea.get("hook", "")[:80]
+        design_url = idea.get("design_url", "")
+        ctype = idea.get("content_type", "?")
+
+        text_body = f"*{i}. [{ctype}]* {hook}"
+        if design_url and design_url.startswith("https://"):
+            text_body += f"\n<{design_url}|🎨 디자인 미리보기>"
+        elif design_url and design_url.startswith("design-brief://"):
+            text_body += "\n_[텍스트 디자인 브리프 생성됨]_"
+
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": text_body},
+        })
+
+        if idea_id:
+            approve_url = make_approve_url(idea_id, "approved", stage="design")
+            reject_url = make_approve_url(idea_id, "rejected", stage="design")
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "✅ 최종 승인"},
+                        "style": "primary",
+                        "url": approve_url,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "❌ 거부"},
+                        "style": "danger",
+                        "url": reject_url,
+                    },
+                ],
+            })
+        blocks.append({"type": "divider"})
+
     return send(text, blocks=blocks, webhook_url=webhook_url)
 
 
