@@ -28,6 +28,7 @@ import uvicorn
 
 from src.agents.orchestrator import run_all_active
 from src.agents.designer import run_all_active as designer_run_all_active
+from src.agents.reporter import run_all_active as reporter_run_all_active
 from src.api.approve import app as api_app
 
 KST_OFFSET = 9  # UTC+9
@@ -43,6 +44,15 @@ def daily_job() -> None:
     results = run_all_active()
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
+
+
+def weekly_report_job() -> None:
+    """매주 일요일 18:00 KST (09:00 UTC): 주간 리포트."""
+    now = datetime.now(timezone.utc)
+    print(f"[Cron] weekly_report 시작 — {now.isoformat()}")
+    results = reporter_run_all_active()
+    ok = sum(1 for r in results if r.get("status") == "completed")
+    print(f"[Cron] weekly_report 완료 — {ok}/{len(results)} 성공")
 
 
 def designer_poll_job() -> None:
@@ -66,11 +76,15 @@ def main() -> None:
     api_thread.start()
 
     daily_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
+    weekly_report_utc_hour = _utc_hour_for_kst(18)  # 18:00 KST = 09:00 UTC
+
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
     schedule.every(30).minutes.do(designer_poll_job)
+    schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
     print("[Cron] designer poll — 30분 간격")
+    print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")
     print("[Cron] 대기 중...")
 
     while True:
