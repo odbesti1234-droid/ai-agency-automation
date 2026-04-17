@@ -1,11 +1,9 @@
-"""designer 에이전트 — approved 콘텐츠 아이디어 → Canva 디자인 생성.
+"""designer 에이전트 — approved 콘텐츠 아이디어 → 카드뉴스 이미지 생성.
 
 플로우:
-  1. content_ideas WHERE status='approved' AND design_url IS NULL 조회
-  2. 클라이언트 visual_style + content idea → 디자인 프롬프트 생성
-  3. Canva MCP (subprocess claude CLI) 로 디자인 생성 시도
-  4. 실패/미설정 시: 텍스트 디자인 브리프를 design_url 에 저장 (fallback)
-  5. status → design_ready, agent_runs 기록
+  1. card_designer (HTML→Playwright→Storage) 시도 [우선]
+  2. Canva MCP (subprocess claude CLI) fallback
+  3. 텍스트 디자인 브리프 최종 fallback
 """
 from __future__ import annotations
 
@@ -159,7 +157,16 @@ def _generate_design_brief(client: anthropic.Anthropic, idea: dict, visual_style
 # ---------------------------------------------------------------------------
 
 def run(client_slug: str) -> dict:
-    """단일 클라이언트 designer 실행. approved 상태 아이디어 → design_ready."""
+    """단일 클라이언트 designer 실행. card_designer 우선, Canva/브리프 fallback."""
+    # card_designer 우선 실행 (HTML→PNG→Storage 파이프라인)
+    try:
+        from src.agents.card_designer import run as card_run
+        result = card_run(client_slug)
+        if result.get("status") in ("completed", "partial", "skipped"):
+            return result
+    except Exception as e:
+        print(f"[designer:{client_slug}] card_designer 실패, Canva fallback 시도: {e}")
+
     started = datetime.now(timezone.utc)
     t0 = time.time()
 

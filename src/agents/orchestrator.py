@@ -20,6 +20,13 @@ from src.agents.trend_scanner import scan as trend_scan
 from src.agents.content_generator import generate as content_generate
 from src.notifications.slack import notify_content_ready, notify_error
 
+# card_designer는 optional import (Playwright 미설치 환경 허용)
+try:
+    from src.agents.card_designer import run as card_design_run
+    _CARD_DESIGNER_AVAILABLE = True
+except ImportError:
+    _CARD_DESIGNER_AVAILABLE = False
+
 
 def run(client_slug: str) -> dict:
     """단일 클라이언트 풀 워크플로우 실행."""
@@ -57,7 +64,7 @@ def run(client_slug: str) -> dict:
         print(f"[{client_name}] Step 2/2: 콘텐츠 생성 (topic_hint={topic_hint})...")
         ideas = content_generate(client_slug, topic=topic_hint, count=3)
 
-        # Step 3: Slack 알림
+        # Step 3: Slack 콘텐츠 아이디어 알림 (승인 대기)
         slack_webhook = client.get("slack_channel_webhook") or None
         notify_content_ready(
             client_name=client_name,
@@ -66,18 +73,42 @@ def run(client_slug: str) -> dict:
             webhook_url=slack_webhook,
         )
 
+        # Step 4: 카드뉴스 자동 생성 (승인 대기 없이 즉시 생성 → 이미지도 함께 전송)
+        card_result: dict = {"status": "skipped", "reason": "card_designer unavailable"}
+        if _CARD_DESIGNER_AVAILABLE:
+            print(f"[{client_name}] Step 3/3: 카드뉴스 이미지 자동 생성...")
+            # 방금 생성된 아이디어를 auto-approve 후 카드 제작
+            try:
+                db.update(
+                    "content_ideas",
+                    filters={"client_id": client_id, "status": "pending"},
+                    patch={"status": "approved"},
+                )
+                card_result = card_design_run(client_slug)
+                print(f"[{client_name}] 카드뉴스 {card_result.get('designed', 0)}개 생성 완료")
+            except Exception as e:
+                print(f"[{client_name}] 카드뉴스 생성 실패 (비치명적): {e}")
+                card_result = {"status": "error", "error": str(e)}
+
         db.update("agent_runs", filters={"id": run_id}, patch={
             "status": "completed",
             "output": {
                 "snapshot_id": snapshot.get("snapshot_id"),
                 "content_count": len(ideas),
                 "trending_topics": trending_topics[:3],
+                "card_designed": card_result.get("designed", 0),
             },
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
-        print(f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개 생성, Slack 알림 전송")
-        return {"client": client_name, "run_id": run_id, "status": "completed", "content_count": len(ideas)}
+        print(f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개, 카드뉴스 {card_result.get('designed', 0)}개")
+        return {
+            "client": client_name,
+            "run_id": run_id,
+            "status": "completed",
+            "content_count": len(ideas),
+            "card_designed": card_result.get("designed", 0),
+        }
 
     except Exception as e:
         notify_error(client_name, "main_orchestrator", str(e))

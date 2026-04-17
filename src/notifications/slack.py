@@ -104,13 +104,13 @@ def notify_design_ready(
     ideas: list[dict],
     webhook_url: str | None = None,
 ) -> bool:
-    """디자인 완료 알림 — 각 아이디어마다 최종 승인/거부 버튼 포함."""
+    """디자인 완료 알림 — 카드뉴스 이미지 인라인 + 최종 승인/거부 버튼."""
     text = f"*[{client_name}] 디자인 {len(ideas)}개 준비됨 — 최종 승인 대기*"
 
     blocks: list[dict] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"[{client_name}] 디자인 {len(ideas)}개 완료"},
+            "text": {"type": "plain_text", "text": f"🎨 [{client_name}] 카드뉴스 {len(ideas)}개 완성"},
         },
     ]
 
@@ -119,18 +119,37 @@ def notify_design_ready(
         hook = idea.get("hook", "")[:80]
         design_url = idea.get("design_url", "")
         ctype = idea.get("content_type", "?")
+        hashtags = idea.get("hashtags", [])
+        tag_preview = " ".join(hashtags[:5]) if hashtags else ""
 
-        text_body = f"*{i}. [{ctype}]* {hook}"
-        if design_url and design_url.startswith("https://"):
-            text_body += f"\n<{design_url}|🎨 디자인 미리보기>"
-        elif design_url and design_url.startswith("design-brief://"):
-            text_body += "\n_[텍스트 디자인 브리프 생성됨]_"
+        # 콘텐츠 요약 텍스트
+        text_body = f"*{i}. [{ctype.upper()}]* {hook}"
+        if tag_preview:
+            text_body += f"\n_{tag_preview}_"
 
         blocks.append({
             "type": "section",
             "text": {"type": "mrkdwn", "text": text_body},
         })
 
+        # 실제 이미지 블록 (Supabase Storage public URL인 경우)
+        is_image_url = (
+            design_url
+            and design_url.startswith("https://")
+            and "supabase" in design_url
+            and design_url.endswith(".png")
+        )
+        if is_image_url:
+            blocks.append({
+                "type": "image",
+                "image_url": design_url,
+                "alt_text": f"{client_name} 카드뉴스 {i}",
+            })
+        elif design_url and design_url.startswith("https://"):
+            # Canva URL 등 외부 링크
+            blocks[-1]["text"]["text"] += f"\n<{design_url}|🎨 디자인 미리보기>"
+
+        # 승인/거부 버튼
         if idea_id:
             approve_url = make_approve_url(idea_id, "approved", stage="design")
             reject_url = make_approve_url(idea_id, "rejected", stage="design")
@@ -139,13 +158,13 @@ def notify_design_ready(
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✅ 최종 승인"},
+                        "text": {"type": "plain_text", "text": "✅ 최종 승인 · 게시"},
                         "style": "primary",
                         "url": approve_url,
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "❌ 거부"},
+                        "text": {"type": "plain_text", "text": "❌ 재생성"},
                         "style": "danger",
                         "url": reject_url,
                     },
