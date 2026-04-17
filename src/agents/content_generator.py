@@ -98,11 +98,28 @@ def generate(client_slug: str, topic: str | None = None, count: int = 3) -> list
     })
     run_id: str = run_row.get("id", "?")
 
+    # brand_voice 전략 데이터 추출 (onboarder가 채운 필드)
+    content_pillars: list = brand_voice.get("content_pillars", [])
+    hook_library: list = brand_voice.get("hook_library", [])
+    hashtag_sets: list = brand_voice.get("hashtag_sets", [])
+    positioning: str = brand_voice.get("positioning", "")
+
+    strategy_hint = ""
+    if content_pillars:
+        strategy_hint += f"\n\n[콘텐츠 필라 — 반드시 이 중 하나를 중심 주제로 사용]\n" + "\n".join(f"  {i+1}. {p}" for i, p in enumerate(content_pillars[:5]))
+    if hook_library:
+        strategy_hint += f"\n\n[훅 라이브러리 — 이 스타일을 참고해 훅 작성]\n" + "\n".join(f"  - {h}" for h in hook_library[:5])
+    if hashtag_sets:
+        flat_tags = hashtag_sets[0] if hashtag_sets else []
+        strategy_hint += f"\n\n[브랜드 해시태그 세트 (필수 포함)]\n  {' '.join(flat_tags[:15])}"
+    if positioning:
+        strategy_hint += f"\n\n[포지셔닝 — 이 정체성에 맞게 작성]\n  {positioning}"
+
     # 유저 메시지 (동적 런타임 데이터)
     topic_line = f"주제 힌트: {topic}" if topic else "주제: 계절·최신 트렌드 기반으로 자유롭게 선정"
     user_message = f"""클라이언트: {client['name']} ({client['industry']})
 브랜드 보이스:
-{json.dumps(brand_voice, ensure_ascii=False, indent=2)}
+{json.dumps(brand_voice, ensure_ascii=False, indent=2)}{strategy_hint}
 
 {topic_line}
 생성 개수: {count}개"""

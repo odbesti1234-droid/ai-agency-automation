@@ -141,14 +141,31 @@ def scan(client_slug: str) -> dict:
     run_id: str = run_row.get("id", "?")
 
     keywords = _INDUSTRY_KEYWORDS.get(industry, _DEFAULT_KEYWORDS)
-    search_query = " OR ".join(keywords[:2])
+
+    brand_voice: dict = client.get("brand_voice") or {}
+    content_pillars: list = brand_voice.get("content_pillars", [])
+    audience_profile: dict = brand_voice.get("audience_profile", {})
+    core_desire: str = audience_profile.get("core_desire", "")
+    demographics: str = audience_profile.get("demographics", "")
+    scroll_triggers: list = audience_profile.get("scroll_stop_triggers", [])
+
+    pillar_hint = ""
+    if content_pillars:
+        pillar_hint = f"\n콘텐츠 필라 (이 주제들 중심으로 트렌드 찾기):\n" + "\n".join(f"  - {p}" for p in content_pillars[:5])
+
+    audience_hint = ""
+    if core_desire or demographics:
+        audience_hint = f"\n타겟 오디언스:\n  핵심욕망: {core_desire}\n  인구통계: {demographics}"
+        if scroll_triggers:
+            audience_hint += f"\n  스크롤 멈춤 요인: {', '.join(scroll_triggers[:3])}"
 
     user_message = f"""업종: {industry}
 클라이언트: {client['name']}
 검색 키워드: {', '.join(keywords)}
-오늘 날짜: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
+오늘 날짜: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}{pillar_hint}{audience_hint}
 
-위 업종의 최신 인스타그램·SNS 트렌드를 검색하고 JSON으로 정리해줘."""
+위 업종의 최신 인스타그램·SNS 트렌드를 검색하고 JSON으로 정리해줘.
+콘텐츠 필라와 타겟 오디언스에 맞는 트렌드를 우선 발굴할 것."""
 
     started = time.time()
     try:
