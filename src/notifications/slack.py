@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.api.approve import make_approve_url
+from src.api.approve import make_approve_url, make_brief_url
 
 
 def send(
@@ -34,7 +34,7 @@ def send(
         payload["blocks"] = blocks
 
     try:
-        resp = httpx.post(url, json=payload, timeout=10)
+        resp = httpx.post(url, json=payload, timeout=30)
         if resp.status_code == 200:
             return True
         print(f"[Slack] 전송 실패: {resp.status_code} {resp.text}")
@@ -133,11 +133,12 @@ def notify_design_ready(
         })
 
         # 실제 이미지 블록 (Supabase Storage public URL인 경우)
+        _clean = design_url.split("?")[0] if design_url else ""
         is_image_url = (
             design_url
             and design_url.startswith("https://")
             and "supabase" in design_url
-            and design_url.endswith(".png")
+            and _clean.endswith(".png")
         )
         if is_image_url:
             blocks.append({
@@ -170,6 +171,236 @@ def notify_design_ready(
                     },
                 ],
             })
+        blocks.append({"type": "divider"})
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def notify_final_approved(
+    client_name: str,
+    ideas: list[dict],
+    webhook_url: str | None = None,
+) -> bool:
+    """최종 승인 완료 알림 — 카드뉴스 이미지 + 다운로드 링크를 다시 전송."""
+    count = len(ideas)
+    text = f"*[{client_name}] 🎉 카드뉴스 {count}개 최종 승인 완료 — 아래 이미지를 저장하세요!*"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"🎉 [{client_name}] 카드뉴스 {count}개 게시 확정"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "아래 이미지를 우클릭(또는 꾹 눌러) 저장하세요 📥"},
+        },
+    ]
+
+    for i, idea in enumerate(ideas, 1):
+        hook = idea.get("hook", "")[:80]
+        design_url = idea.get("design_url", "")
+        hashtags = idea.get("hashtags", [])
+        tag_str = " ".join(hashtags[:5]) if hashtags else ""
+
+        summary = f"*{i}.* {hook}"
+        if tag_str:
+            summary += f"\n_{tag_str}_"
+        if design_url:
+            summary += f"\n<{design_url}|⬇️ 이미지 다운로드 링크>"
+
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": summary}})
+
+        clean_url = design_url.split("?")[0] if design_url else ""
+        if design_url and design_url.startswith("https://") and clean_url.endswith(".png"):
+            blocks.append({
+                "type": "image",
+                "image_url": design_url,
+                "alt_text": f"{client_name} 카드뉴스 {i}",
+            })
+
+        blocks.append({"type": "divider"})
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def notify_design_ready_5slides(
+    client_name: str,
+    ideas: list[dict],
+    webhook_url: str | None = None,
+) -> bool:
+    """5-슬라이드 카드뉴스 디자인 완료 알림 — 슬라이드 1(hook) 이미지 + 최종 승인 버튼."""
+    count = len(ideas)
+    text = f"*[{client_name}] 🎨 카드뉴스 {count}개 완성 (5-슬라이드) — 최종 승인 대기*"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"🎨 [{client_name}] 5-슬라이드 카드뉴스 {count}개 완성"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "hook → story → proof → menu → cta 5장 구성"},
+        },
+    ]
+
+    for i, idea in enumerate(ideas[:3], 1):
+        idea_id = idea.get("id", "")
+        hook = idea.get("hook", "")[:80]
+        ctype = idea.get("content_type", "?")
+        design_urls: list = idea.get("design_urls") or []
+        hashtags = idea.get("hashtags", [])
+        tag_preview = " ".join(hashtags[:5]) if hashtags else ""
+
+        summary = f"*{i}. [{ctype.upper()}]* {hook}"
+        if tag_preview:
+            summary += f"\n_{tag_preview}_"
+
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": summary}})
+
+        # 슬라이드 1(hook) 이미지 인라인
+        if design_urls and design_urls[0].startswith("https://"):
+            hook_url = design_urls[0]
+            clean = hook_url.split("?")[0]
+            if clean.endswith(".png") and "supabase" in hook_url:
+                blocks.append({
+                    "type": "image",
+                    "image_url": hook_url,
+                    "alt_text": f"{client_name} 카드뉴스 {i} - hook 슬라이드",
+                })
+
+        # 나머지 슬라이드 링크 (2~5)
+        slide_links = []
+        slide_names = ["story", "proof", "menu", "cta"]
+        for j, url in enumerate(design_urls[1:5], 2):
+            name = slide_names[j - 2] if j - 2 < len(slide_names) else f"slide{j}"
+            slide_links.append(f"<{url}|{j}.{name}>")
+        if slide_links:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "슬라이드: " + "  |  ".join(slide_links)},
+            })
+
+        # 승인/거부 버튼
+        if idea_id:
+            approve_url = make_approve_url(idea_id, "approved", stage="design")
+            reject_url = make_approve_url(idea_id, "rejected", stage="design")
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "✅ 최종 승인 · 게시"},
+                        "style": "primary",
+                        "url": approve_url,
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "❌ 재생성"},
+                        "style": "danger",
+                        "url": reject_url,
+                    },
+                ],
+            })
+        blocks.append({"type": "divider"})
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def send_brief_collection_request(
+    client_name: str,
+    client_slug: str,
+    webhook_url: str | None = None,
+) -> bool:
+    """주간 브리프 수집 요청 — 매주 월요일 9AM 클라이언트에게 발송."""
+    text = f"*[{client_name}] 📋 이번 주 콘텐츠 방향 알려주세요*"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"📋 [{client_name}] 이번 주 콘텐츠 브리프"},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "안녕하세요! 이번 주 콘텐츠 방향을 공유해 주세요.\n아래 항목 중 해당하는 것을 DM이나 댓글로 보내주시면 됩니다 😊",
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "*이번 주 강조하고 싶은 것:*\n"
+                    "• 특별 프로모션/이벤트 있나요?\n"
+                    "• 신메뉴/신상품 출시 예정?\n"
+                    "• 강조하고 싶은 메시지나 시즌 이슈?\n"
+                    "• 피하고 싶은 주제나 톤이 있나요?\n\n"
+                    "_없으면 '자유롭게 만들어주세요' 한 마디면 됩니다!_"
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "📝 브리프 입력하기"},
+                    "style": "primary",
+                    "url": make_brief_url(client_slug),
+                }
+            ],
+        },
+        {"type": "divider"},
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"클라이언트: `{client_slug}` | AI Agency 자동 발송"},
+            ],
+        },
+    ]
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def notify_published(
+    client_name: str,
+    ideas: list[dict],
+    webhook_url: str | None = None,
+) -> bool:
+    """Instagram 게시 완료 알림 — 게시된 포스트 링크 포함."""
+    count = len(ideas)
+    text = f"*[{client_name}] 🚀 Instagram {count}개 게시 완료*"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"🚀 [{client_name}] Instagram {count}개 게시 완료"},
+        },
+    ]
+
+    for i, idea in enumerate(ideas, 1):
+        hook = idea.get("hook", "")[:80]
+        ig_post_id = idea.get("ig_post_id", "")
+        design_url = idea.get("design_url", "")
+        published_at = idea.get("published_at", "")
+
+        summary = f"*{i}.* {hook}"
+        if ig_post_id:
+            summary += f"\n<https://www.instagram.com/p/{ig_post_id}/|📸 Instagram 포스트 보기>"
+        if published_at:
+            summary += f"\n_게시 시각: {published_at[:16].replace('T', ' ')} UTC_"
+
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": summary}})
+
+        clean_url = design_url.split("?")[0] if design_url else ""
+        if design_url and design_url.startswith("https://") and clean_url.endswith(".png"):
+            blocks.append({
+                "type": "image",
+                "image_url": design_url,
+                "alt_text": f"{client_name} 게시 카드뉴스 {i}",
+            })
+
         blocks.append({"type": "divider"})
 
     return send(text, blocks=blocks, webhook_url=webhook_url)

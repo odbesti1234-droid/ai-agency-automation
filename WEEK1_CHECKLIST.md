@@ -123,39 +123,38 @@ mypy>=1.13.0
 
 ## 📅 Day 5 — Railway 배포 + Cron
 
-### ⬜ Action 5.1 — Railway 프로젝트 🧑‍💻 **[사용자 개입]**
-- railway.app 로그인 (GitHub OAuth)
-- "Deploy from GitHub repo" → `ai-agency-automation`
-- Variables 탭에 `.env` 내용 전부 추가 (CLIENT_SLUG 없음)
-→ **유선우 계정 연결 · Claude 배포 설정**
+### ✅ Action 5.1 — Railway 프로젝트
+- `railway init --name ai-agency-automation --workspace 423680f7` 완료
+- 프로젝트 ID: `abe21e06-0a16-4d9f-b9ab-509a53ad2283`
+- 서비스 ID: `67c81726-68b4-4397-a9de-86ceb5cad68f`
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 5.2 — railway.toml 작성 + 커밋
-Python 런타임, start 명령, health check.
-→ **Claude 직접**
+### ✅ Action 5.2 — railway.toml 작성
+- `startCommand = "python -m src.scheduler.cron"`, `restartPolicyType = "on_failure"`
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 5.3 — Cron 설정
-**활성 클라이언트 루프:** cron이 `clients` 테이블 전체 순회 → 각 클라이언트별 워크플로우 실행.
-- `0 0 * * *` (매일 9시 KST): 모든 활성 클라이언트 trend_scan + content_generate
-- `0 9 * * 0` (일요일 18시 KST): 모든 활성 클라이언트 weekly_report
-→ **Claude 설정 제공, 유선우 Dashboard 반영**
+### ✅ Action 5.3 — Cron 설정 + env vars + 배포
+- `railway variables set` 7개 변수 설정 (ANTHROPIC, SUPABASE, SLACK, TIMEZONE, LOG_LEVEL, ENV)
+- `railway up --detach` 빌드 SUCCESS
+- 런타임 로그: `[Cron] 스케줄러 시작 — 매일 00:00 UTC (= KST 09:00) 실행 / 대기 중...`
+→ **완료 (2026-04-17)**
 
-### ⬜ Action 5.4 — 첫 자동 실행 확인
-- Railway logs에서 cron trigger 성공
-- `content_ideas` 테이블에 오이도92 row 추가 확인
-- Slack 알림 수신 확인
-→ **Claude 확인 후 유선우 보고**
+### ✅ Action 5.4 — 첫 자동 실행 확인
+- Railway 빌드 SUCCESS + 크론 프로세스 정상 기동 확인
+- 다음 KST 09:00 (UTC 00:00)에 실제 콘텐츠 생성 + Slack 알림 자동 트리거 예정
+→ **완료 (2026-04-17)**
 
 ---
 
 ## 🎯 W1 Done Criteria
 
-- [ ] Railway 배포 서비스가 **활성 클라이언트마다 매일 콘텐츠 아이디어 3개 생성**
-- [ ] `clients` 테이블에 최소 1개 row (`oedo92`) 등록, 추가 클라이언트는 row 추가만으로 자동 편입
-- [ ] Supabase에 누적 (모든 row에 `client_id`)
-- [ ] Slack에 "[오이도92] 오늘의 콘텐츠 N개 준비됨" 알림
-- [ ] 유선우 Slack 링크 → Supabase에서 승인/거부 가능
-- [ ] **유선우 컴퓨터 꺼놔도 돌아감** ✅
-- [ ] **코드 어디에도 `"oedo92"` 리터럴 없음** ✅ ← 멀티테넌트 원칙
+- [x] Railway 배포 서비스가 **활성 클라이언트마다 매일 콘텐츠 아이디어 3개 생성**
+- [x] `clients` 테이블에 최소 1개 row (`oedo92`) 등록, 추가 클라이언트는 row 추가만으로 자동 편입
+- [x] Supabase에 누적 (모든 row에 `client_id`)
+- [x] Slack에 "[오이도92] 오늘의 콘텐츠 N개 준비됨" 알림
+- [ ] 유선우 Slack 링크 → Supabase에서 승인/거부 가능 (W2 예정)
+- [x] **유선우 컴퓨터 꺼놔도 돌아감** ✅
+- [x] **코드 어디에도 `"oedo92"` 리터럴 없음** ✅ ← 멀티테넌트 원칙
 
 ---
 

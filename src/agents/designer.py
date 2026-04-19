@@ -189,7 +189,7 @@ def run(client_slug: str) -> dict:
             filters={"status": "approved", "client_id": client_id},
             limit=5,
         )
-        pending_design = [r for r in all_approved if not r.get("design_url")]
+        pending_design = [r for r in all_approved if not r.get("design_url") and not r.get("design_urls")]
 
         if not pending_design:
             print(f"[designer:{client_slug}] 디자인 대기 아이디어 없음")

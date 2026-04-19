@@ -63,6 +63,59 @@ def _log_agent_run(
         print(f"[reporter] agent_runs 기록 실패: {e}")
 
 
+def get_best_performing_hooks(client_id: str, limit: int = 3) -> list[dict]:
+    """성과 상위 훅 추출 — orchestrator가 generate() top_performing에 주입."""
+    db = SupabaseClient()
+    try:
+        ideas = db.select(
+            "content_ideas",
+            filters={"client_id": client_id},
+            limit=200,
+        )
+        qualified = [
+            r for r in ideas
+            if r.get("status") in ("published", "final_approved")
+            and r.get("hook")
+            and r.get("confidence_score") is not None
+        ]
+        qualified.sort(key=lambda r: float(r.get("confidence_score", 0)), reverse=True)
+        return [
+            {
+                "hook": r.get("hook", ""),
+                "content_type": r.get("content_type", ""),
+                "confidence_score": r.get("confidence_score"),
+            }
+            for r in qualified[:limit]
+        ]
+    finally:
+        db.close()
+
+
+def update_weekly_brief(client_id: str, best_hooks: list[dict]) -> bool:
+    """성과 상위 훅 패턴을 brand_voice.weekly_brief에 저장 (피드백 루프)."""
+    if not best_hooks:
+        return False
+    db = SupabaseClient()
+    try:
+        clients = db.select("clients", filters={"id": client_id})
+        if not clients:
+            return False
+        client = clients[0]
+        brand_voice: dict = client.get("brand_voice") or {}
+        brand_voice["weekly_brief"] = {
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "top_hooks": best_hooks,
+            "note": "성과 상위 훅 자동 추출 — 다음 주 생성 프롬프트에 반영됨",
+        }
+        db.update("clients", filters={"id": client_id}, patch={"brand_voice": brand_voice})
+        return True
+    except Exception as e:
+        print(f"[reporter] weekly_brief 업데이트 실패: {e}")
+        return False
+    finally:
+        db.close()
+
+
 def _get_week_stats(db: SupabaseClient, client_id: str) -> dict:
     """지난 7일 content_ideas 통계 수집."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
@@ -124,7 +177,7 @@ def _format_slack_report(client_name: str, stats: dict, week_label: str) -> str:
     return "\n".join(lines)
 
 
-def run(client_slug: str) -> dict:
+def run(client_slug: str, update_weekly_brief_flag: bool = True) -> dict:
     """단일 클라이언트 주간 리포트 실행."""
     started = datetime.now(timezone.utc)
     t0 = time.time()
@@ -150,13 +203,27 @@ def run(client_slug: str) -> dict:
         slack_webhook = client_row.get("slack_channel_webhook") or None
         slack_send(report_text, webhook_url=slack_webhook)
 
+        # 피드백 루프: 성과 상위 훅 → brand_voice.weekly_brief 자동 업데이트
+        brief_updated = False
+        best_hooks: list[dict] = []
+        if update_weekly_brief_flag:
+            best_hooks = get_best_performing_hooks(client_id)
+            if best_hooks:
+                brief_updated = update_weekly_brief(client_id, best_hooks)
+                print(f"[reporter:{client_slug}] weekly_brief 업데이트: {brief_updated} (훅 {len(best_hooks)}개)")
+
         duration = time.time() - t0
         _log_agent_run(
             db,
             client_id=client_id,
             status="completed",
             input_data={"client_slug": client_slug},
-            output_data={"stats": stats, "week": week_label},
+            output_data={
+                "stats": stats,
+                "week": week_label,
+                "best_hooks_count": len(best_hooks),
+                "weekly_brief_updated": brief_updated,
+            },
             started_at=started,
             duration=duration,
         )
@@ -166,6 +233,8 @@ def run(client_slug: str) -> dict:
             "client": client_name,
             "week": week_label,
             "stats": stats,
+            "best_hooks": best_hooks,
+            "weekly_brief_updated": brief_updated,
         }
 
     except Exception as e:

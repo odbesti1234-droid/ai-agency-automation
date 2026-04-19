@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.db.client import db
 from src.agents.trend_scanner import scan as trend_scan
 from src.agents.content_generator import generate as content_generate
+from src.agents.reporter import get_best_performing_hooks
 from src.notifications.slack import notify_content_ready, notify_error
 
 # card_designer는 optional import (Playwright 미설치 환경 허용)
@@ -26,6 +27,13 @@ try:
     _CARD_DESIGNER_AVAILABLE = True
 except ImportError:
     _CARD_DESIGNER_AVAILABLE = False
+
+# publisher는 optional import (IG 자격증명 없는 환경 허용)
+try:
+    from src.agents.publisher import run as publisher_run
+    _PUBLISHER_AVAILABLE = True
+except ImportError:
+    _PUBLISHER_AVAILABLE = False
 
 
 def run(client_slug: str) -> dict:
@@ -60,9 +68,24 @@ def run(client_slug: str) -> dict:
         elif trending_topics:
             topic_hint = ", ".join(trending_topics[:2])
 
+        # Step 2: 성과 상위 훅 조회 (top_performing 주입용)
+        top_performing = get_best_performing_hooks(client_id)
+        if top_performing:
+            print(f"[{client_name}] 성과 훅 {len(top_performing)}개 로드 완료")
+
+        # A/B 모드: 화(Tuesday=1), 목(Thursday=3) 실행 시 활성화
+        weekday = datetime.now(timezone.utc).weekday()
+        ab_variant = weekday in (1, 3)
+
         # Step 2: 콘텐츠 생성
-        print(f"[{client_name}] Step 2/2: 콘텐츠 생성 (topic_hint={topic_hint})...")
-        ideas = content_generate(client_slug, topic=topic_hint, count=3)
+        print(f"[{client_name}] Step 2/2: 콘텐츠 생성 (topic_hint={topic_hint}, ab={ab_variant})...")
+        ideas = content_generate(
+            client_slug,
+            topic=topic_hint,
+            count=3,
+            ab_variant=ab_variant,
+            top_performing=top_performing or None,
+        )
 
         # Step 3: Slack 콘텐츠 아이디어 알림 (승인 대기)
         slack_webhook = client.get("slack_channel_webhook") or None
@@ -73,22 +96,27 @@ def run(client_slug: str) -> dict:
             webhook_url=slack_webhook,
         )
 
-        # Step 4: 카드뉴스 자동 생성 (승인 대기 없이 즉시 생성 → 이미지도 함께 전송)
+        # Step 4: 카드뉴스 생성 — 유선우 Slack 승인 후에만 실행 (approved 상태만 처리)
         card_result: dict = {"status": "skipped", "reason": "card_designer unavailable"}
         if _CARD_DESIGNER_AVAILABLE:
-            print(f"[{client_name}] Step 3/3: 카드뉴스 이미지 자동 생성...")
-            # 방금 생성된 아이디어를 auto-approve 후 카드 제작
+            print(f"[{client_name}] Step 3/3: 승인된 콘텐츠 카드뉴스 생성...")
             try:
-                db.update(
-                    "content_ideas",
-                    filters={"client_id": client_id, "status": "pending"},
-                    patch={"status": "approved"},
-                )
                 card_result = card_design_run(client_slug)
                 print(f"[{client_name}] 카드뉴스 {card_result.get('designed', 0)}개 생성 완료")
             except Exception as e:
                 print(f"[{client_name}] 카드뉴스 생성 실패 (비치명적): {e}")
                 card_result = {"status": "error", "error": str(e)}
+
+        # Step 5: 최종 승인된 콘텐츠 Instagram 게시
+        publish_result: dict = {"status": "skipped", "reason": "publisher unavailable"}
+        if _PUBLISHER_AVAILABLE:
+            print(f"[{client_name}] Step 4/4: 최종 승인 콘텐츠 Instagram 게시...")
+            try:
+                publish_result = publisher_run(client_slug)
+                print(f"[{client_name}] 게시 {publish_result.get('published', 0)}개 완료")
+            except Exception as e:
+                print(f"[{client_name}] 게시 실패 (비치명적): {e}")
+                publish_result = {"status": "error", "error": str(e)}
 
         db.update("agent_runs", filters={"id": run_id}, patch={
             "status": "completed",
@@ -97,17 +125,23 @@ def run(client_slug: str) -> dict:
                 "content_count": len(ideas),
                 "trending_topics": trending_topics[:3],
                 "card_designed": card_result.get("designed", 0),
+                "published": publish_result.get("published", 0),
             },
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
-        print(f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개, 카드뉴스 {card_result.get('designed', 0)}개")
+        print(
+            f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개, "
+            f"카드뉴스 {card_result.get('designed', 0)}개, "
+            f"게시 {publish_result.get('published', 0)}개"
+        )
         return {
             "client": client_name,
             "run_id": run_id,
             "status": "completed",
             "content_count": len(ideas),
             "card_designed": card_result.get("designed", 0),
+            "published": publish_result.get("published", 0),
         }
 
     except Exception as e:
