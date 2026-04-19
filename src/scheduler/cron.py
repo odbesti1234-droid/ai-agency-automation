@@ -32,6 +32,7 @@ from src.agents.reporter import run_all_active as reporter_run_all_active
 from src.agents.onboarder import run_pending as onboarder_run_pending
 from src.agents.publisher import run_all_active as publisher_run_all_active
 from src.api.approve import app as api_app
+from src.utils.ig_token import refresh_all_active as ig_token_refresh_all
 
 KST_OFFSET = 9  # UTC+9
 
@@ -122,6 +123,15 @@ def designer_poll_job() -> None:
     print(f"[Cron] designer_poll 완료 — {designed}/{len(results)} 처리")
 
 
+def token_refresh_job() -> None:
+    """매주 월요일 09:00 KST: IG 토큰 만료 체크 + 자동 갱신."""
+    now = datetime.now(timezone.utc)
+    print(f"[Cron] token_refresh 시작 — {now.isoformat()}")
+    results = ig_token_refresh_all(days_threshold=10)
+    refreshed = sum(1 for r in results if r.get("refreshed"))
+    print(f"[Cron] token_refresh 완료 — {refreshed}/{len(results)} 갱신")
+
+
 def publisher_poll_job() -> None:
     """30분마다 final_approved 상태 아이디어 → Instagram 발행."""
     now = datetime.now(timezone.utc)
@@ -144,18 +154,21 @@ def main() -> None:
 
     daily_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
     weekly_report_utc_hour = _utc_hour_for_kst(18)  # 18:00 KST = 09:00 UTC
+    token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
     schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
+    schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
     print("[Cron] designer poll — 30분 간격")
     print("[Cron] publisher poll — 30분 간격")
     print("[Cron] onboarding poll — 6시간 간격")
     print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")
+    print(f"[Cron] IG 토큰 갱신 — 매주 월요일 {token_refresh_utc:02d}:00 UTC (= KST 09:00)")
     print("[Cron] 대기 중...")
 
     while True:
