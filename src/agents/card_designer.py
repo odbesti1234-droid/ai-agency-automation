@@ -894,6 +894,16 @@ def run(client_slug: str) -> dict:
             hook_preview = idea.get("hook", "")[:40]
             print(f"[card_designer:{client_slug}] 처리 중 [{idea_id[:8]}] {hook_preview}...")
 
+            # slide_script 없으면 먼저 생성 (H-P-I-S-C 5-9장)
+            if not idea.get("slide_script"):
+                try:
+                    from src.agents.content_generator import generate_slide_script
+                    idea["slide_script"] = generate_slide_script(idea, brand_voice)
+                    db_client.update("content_ideas", filters={"id": idea_id}, patch={"slide_script": idea["slide_script"]})
+                    print(f"  → slide_script 생성 완료 ({len(idea['slide_script'])}장)")
+                except Exception as e:
+                    print(f"  → slide_script 생성 실패 (key_points 폴백): {e}")
+
             # 캐러셀 HTML 생성
             try:
                 slides_html = generate_carousel_html(idea, brand_voice, client_name)
