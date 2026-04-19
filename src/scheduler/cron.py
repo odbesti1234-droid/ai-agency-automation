@@ -41,7 +41,7 @@ def _utc_hour_for_kst(kst_hour: int) -> int:
 
 
 def daily_job() -> None:
-    """매일 09:00 KST: weekly_brief → topic으로 전달해 콘텐츠 생성."""
+    """매일 09:00 KST: 어제 성과 피드백 주입 → trend_scan → 콘텐츠 생성."""
     from src.db.client import SupabaseClient
     from src.agents.content_generator import generate
     from src.agents.trend_scanner import scan
@@ -61,11 +61,29 @@ def daily_job() -> None:
         if not slug:
             continue
         try:
+            # 1단계: 트렌드 스캔
             scan(slug)
-            bv = client.get("brand_voice") or {}
-            topic = bv.get("weekly_brief") or None
+
+            # 2단계: 콘텐츠 생성
+            db_refresh = SupabaseClient()
+            try:
+                client_rows = db_refresh.select("clients", filters={"slug": slug})
+                if client_rows:
+                    bv = client_rows[0].get("brand_voice") or {}
+                    topic = bv.get("weekly_brief") or None
+                    top_hooks_raw = bv.get("daily_feedback", {}).get("top_performing_hooks", [])
+                    top_performing = [{"hook": h["hook"], "confidence_score": h["confidence"]} for h in top_hooks_raw]
+                else:
+                    topic = None
+                    top_performing = []
+            finally:
+                db_refresh.close()
+
             if topic:
                 print(f"[Cron] {slug} — 브리프 사용: {topic[:60]}")
+            if top_performing:
+                print(f"[Cron] {slug} — 상위 훅 {len(top_performing)}개 참고")
+
             generate(slug, topic=topic)
             ok += 1
         except Exception as e:

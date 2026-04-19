@@ -236,6 +236,47 @@ h2{{color:#1e3a5f}}</style></head>
         db.close()
 
 
+def _make_trigger_token(client_slug: str) -> str:
+    msg = f"trigger:{client_slug}".encode()
+    return hmac.new(_SECRET.encode(), msg, hashlib.sha256).hexdigest()
+
+
+@app.post("/trigger")
+async def trigger_pipeline(
+    client: str = Query(default="all"),
+    token: str = Query(...),
+) -> dict:
+    """파이프라인 수동 트리거. client=all 이면 전체 클라이언트 실행."""
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+
+    expected = _make_trigger_token(client)
+    if not hmac.compare_digest(expected, token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    import threading
+    from src.agents.orchestrator import run_all_active, run as run_single
+
+    def _run() -> None:
+        try:
+            if client == "all":
+                run_all_active()
+            else:
+                run_single(client)
+        except Exception as e:
+            print(f"[trigger] 파이프라인 오류: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "client": client}
+
+
+def make_trigger_url(client: str = "all") -> str:
+    """CLAUDE.md 트리거용 URL 생성."""
+    base = os.environ.get("APPROVAL_BASE_URL", "https://ai-agency-automation-production.up.railway.app").rstrip("/")
+    token = _make_trigger_token(client)
+    return f"{base}/trigger?client={client}&token={token}"
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.api.approve:app", host="0.0.0.0", port=8000, reload=True)
