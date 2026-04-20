@@ -1,15 +1,22 @@
-"""main_orchestrator — 워크플로우 총괄 지휘관.
+"""main_orchestrator v3 — 리드마그넷 기반 병렬 파이프라인.
 
-체인: trend_scan → content_generate → save → Slack 알림
+체인:
+  [sub-agent 1] trend_scan
+      ↓
+  [sub-agent 2] info_extractor.extract        ← 병렬
+  [sub-agent 3] info_extractor.extract_keyword ← 병렬
+      ↓
+  [sub-agent 4] lead_magnet.run → Slack
 
 진입점:
-    python -m src.agents.orchestrator --client oedo92
-    python -m src.agents.orchestrator --all-active   # 모든 활성 클라이언트 순회
+    python -m src.agents.orchestrator --client fit_ai_founder
+    python -m src.agents.orchestrator --all-active
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,40 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.db.client import db
 from src.agents.trend_scanner import scan as trend_scan
-from src.agents.content_generator import generate as content_generate
-from src.agents.reporter import get_best_performing_hooks
-from src.notifications.slack import notify_content_ready, notify_error
-
-_AUTO_APPROVE_THRESHOLD = 0.85  # confidence_score 이상이면 자동 approved
-
-
-def _auto_approve_ideas(ideas: list[dict]) -> int:
-    """confidence_score >= 임계값인 아이디어를 approved로 자동 전환. 승인 수 반환."""
-    approved_count = 0
-    for idea in ideas:
-        idea_id = idea.get("id")
-        score = float(idea.get("confidence_score") or 0)
-        if idea_id and score >= _AUTO_APPROVE_THRESHOLD:
-            try:
-                db.update("content_ideas", filters={"id": idea_id}, patch={"status": "approved"})
-                approved_count += 1
-            except Exception as e:
-                print(f"[orchestrator] auto-approve 실패 {idea_id[:8]}: {e}")
-    return approved_count
-
-# card_designer는 optional import (Playwright 미설치 환경 허용)
-try:
-    from src.agents.card_designer import run as card_design_run
-    _CARD_DESIGNER_AVAILABLE = True
-except ImportError:
-    _CARD_DESIGNER_AVAILABLE = False
-
-# publisher는 optional import (IG 자격증명 없는 환경 허용)
-try:
-    from src.agents.publisher import run as publisher_run
-    _PUBLISHER_AVAILABLE = True
-except ImportError:
-    _PUBLISHER_AVAILABLE = False
+from src.agents.info_extractor import extract as extract_info, extract_keyword
+from src.agents.lead_magnet import run as lead_magnet_run
+from src.notifications.slack import notify_error
 
 
 def run(client_slug: str) -> dict:
@@ -61,6 +37,7 @@ def run(client_slug: str) -> dict:
     client = clients[0]
     client_id: str = client["id"]
     client_name: str = client["name"]
+    brand_voice: dict = client.get("brand_voice") or {}
 
     run_row = db.insert("agent_runs", {
         "client_id": client_id,
@@ -70,121 +47,60 @@ def run(client_slug: str) -> dict:
         "input": {"client_slug": client_slug},
     })
     run_id: str = run_row.get("id", "?")
-    print(f"[{client_name}] 오케스트레이터 시작 (run_id={run_id})")
+    print(f"[{client_name}] 오케스트레이터 v3 시작 (run_id={run_id})")
 
     try:
-        # Step 1: 트렌드 스캔
-        print(f"[{client_name}] Step 1/2: 트렌드 스캔...")
+        # Sub-agent 1: 트렌드 스캔
+        print(f"[{client_name}] [1/4] 트렌드 스캔...")
         snapshot = trend_scan(client_slug)
         trending_topics = snapshot.get("trending_topics", [])
         recommended_angle = snapshot.get("recommended_angle", "")
-
-        topic_hint = None
-        if recommended_angle:
-            topic_hint = recommended_angle[:120]
-        elif trending_topics:
-            topic_hint = ", ".join(trending_topics[:2])
-
-        # Step 2: 성과 상위 훅 조회 (top_performing 주입용)
-        top_performing = get_best_performing_hooks(client_id)
-        if top_performing:
-            print(f"[{client_name}] 성과 훅 {len(top_performing)}개 로드 완료")
-
-        # A/B 모드: 화(Tuesday=1), 목(Thursday=3) 실행 시 활성화
-        weekday = datetime.now(timezone.utc).weekday()
-        ab_variant = weekday in (1, 3)
-
-        # Step 2: 콘텐츠 생성
-        print(f"[{client_name}] Step 2/2: 콘텐츠 생성 (topic_hint={topic_hint}, ab={ab_variant})...")
-        ideas = content_generate(
-            client_slug,
-            topic=topic_hint,
-            count=1,
-            ab_variant=ab_variant,
-            top_performing=top_performing or None,
+        topic = (
+            recommended_angle[:120]
+            if recommended_angle
+            else (", ".join(trending_topics[:2]) or "최신 트렌드")
         )
+        print(f"[{client_name}] 주제: {topic}")
 
-        # Step 2.5: Story 1개 강제 생성 (매 실행마다)
-        print(f"[{client_name}] Story 1개 생성 중...")
-        try:
-            story_ideas = content_generate(
-                client_slug,
-                topic=topic_hint,
-                count=1,
-                ab_variant=False,
-                top_performing=top_performing or None,
-            )
-            if story_ideas:
-                story_idea_id = story_ideas[0].get("id")
-                db.update("content_ideas", filters={"id": story_idea_id}, patch={"content_type": "story"})
-                print(f"[{client_name}] Story 생성 완료 (idea_id={story_idea_id[:8]}) → content_type=story 설정")
-        except Exception as e:
-            print(f"[{client_name}] Story 생성 실패 (비치명적): {e}")
+        # Sub-agents 2+3: 정보추출 + 키워드 병렬 실행
+        print(f"[{client_name}] [2+3/4] 정보 추출 + 키워드 생성 (병렬)...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            info_future = executor.submit(extract_info, topic, client_name, brand_voice)
+            keyword_future = executor.submit(extract_keyword, topic, brand_voice)
+            info_raw = info_future.result(timeout=90)
+            keyword = keyword_future.result(timeout=30)
 
-        # Step 3: 고신뢰도 아이디어 자동 승인 (≥0.85)
-        auto_approved = _auto_approve_ideas(ideas)
-        if auto_approved:
-            print(f"[{client_name}] 자동 승인 {auto_approved}개 (confidence ≥ {_AUTO_APPROVE_THRESHOLD})")
+        print(f"[{client_name}] 키워드: '{keyword}'")
+        print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 추출 완료")
 
-        # Slack 콘텐츠 아이디어 알림
-        slack_webhook = client.get("slack_channel_webhook") or None
-        notify_content_ready(
-            client_name=client_name,
-            content_count=len(ideas),
-            ideas=ideas,
-            webhook_url=slack_webhook,
+        # Sub-agent 4: 리드마그넷 카드뉴스 생성 → Slack 자동 발송
+        print(f"[{client_name}] [4/4] 리드마그넷 카드뉴스 생성...")
+        result = lead_magnet_run(
+            client_slug=client_slug,
+            topic=topic,
+            info_raw=info_raw,
+            keyword=keyword,
         )
-
-        # Step 4: 카드뉴스 생성 — approved 상태 아이디어 처리 (자동 승인 포함)
-        card_result: dict = {"status": "skipped", "reason": "card_designer unavailable"}
-        if _CARD_DESIGNER_AVAILABLE:
-            print(f"[{client_name}] Step 3/3: 브랜드 드리븐 멀티슬라이드 카드뉴스 생성...")
-            try:
-                card_result = card_design_run(client_slug)
-                designed = card_result.get('designed', 0)
-                total_slides = sum(r.get("slide_count", 1) for r in card_result.get("results", []) if r.get("success"))
-                print(f"[{client_name}] 카드뉴스 {designed}개 생성 완료 (총 {total_slides}장)")
-            except Exception as e:
-                print(f"[{client_name}] 카드뉴스 생성 실패 (비치명적): {e}")
-                card_result = {"status": "error", "error": str(e)}
-
-        # Step 5: 최종 승인된 콘텐츠 Instagram 게시
-        publish_result: dict = {"status": "skipped", "reason": "publisher unavailable"}
-        if _PUBLISHER_AVAILABLE:
-            print(f"[{client_name}] Step 4/4: 최종 승인 콘텐츠 Instagram 게시...")
-            try:
-                publish_result = publisher_run(client_slug)
-                print(f"[{client_name}] 게시 {publish_result.get('published', 0)}개 완료")
-            except Exception as e:
-                print(f"[{client_name}] 게시 실패 (비치명적): {e}")
-                publish_result = {"status": "error", "error": str(e)}
 
         db.update("agent_runs", filters={"id": run_id}, patch={
             "status": "completed",
             "output": {
-                "snapshot_id": snapshot.get("snapshot_id"),
-                "content_count": len(ideas),
-                "auto_approved": auto_approved,
+                "topic": topic,
+                "keyword": keyword,
                 "trending_topics": trending_topics[:3],
-                "card_designed": card_result.get("designed", 0),
-                "published": publish_result.get("published", 0),
+                "lead_magnet_id": result.get("id"),
+                "slide_count": len(result.get("slide_urls", [])),
+                "notion_url": result.get("notion_url"),
             },
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
         print(
-            f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개 (자동승인 {auto_approved}개), "
-            f"카드뉴스 {card_result.get('designed', 0)}개, "
-            f"게시 {publish_result.get('published', 0)}개"
+            f"[{client_name}] ✅ 완료 — "
+            f"슬라이드 {len(result.get('slide_urls', []))}장, "
+            f"Notion: {result.get('notion_url', '없음')}"
         )
-        return {
-            "client": client_name,
-            "run_id": run_id,
-            "status": "completed",
-            "content_count": len(ideas),
-            "card_designed": card_result.get("designed", 0),
-            "published": publish_result.get("published", 0),
-        }
+        return {"client": client_name, "run_id": run_id, "status": "completed", **result}
 
     except Exception as e:
         notify_error(client_name, "main_orchestrator", str(e))
@@ -219,9 +135,9 @@ def run_all_active() -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="main_orchestrator 실행")
+    parser = argparse.ArgumentParser(description="main_orchestrator v3 실행")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--client", help="client slug (예: oedo92)")
+    group.add_argument("--client", help="client slug (예: fit_ai_founder)")
     group.add_argument("--all-active", action="store_true", help="모든 활성 클라이언트 실행")
     args = parser.parse_args()
 
@@ -229,8 +145,8 @@ def main() -> None:
         results = run_all_active()
         print(f"\n최종 결과: {len(results)}개 클라이언트 처리")
         for r in results:
-            status_icon = "OK" if r.get("status") == "completed" else "FAIL"
-            print(f"  [{status_icon}] {r.get('client')} — {r.get('status')}")
+            icon = "OK" if r.get("status") == "completed" else "FAIL"
+            print(f"  [{icon}] {r.get('client')} — {r.get('status')}")
     else:
         result = run(args.client)
         print(f"완료: {result}")
