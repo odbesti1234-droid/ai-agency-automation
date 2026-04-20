@@ -21,6 +21,23 @@ from src.agents.content_generator import generate as content_generate
 from src.agents.reporter import get_best_performing_hooks
 from src.notifications.slack import notify_content_ready, notify_error
 
+_AUTO_APPROVE_THRESHOLD = 0.85  # confidence_score 이상이면 자동 approved
+
+
+def _auto_approve_ideas(ideas: list[dict]) -> int:
+    """confidence_score >= 임계값인 아이디어를 approved로 자동 전환. 승인 수 반환."""
+    approved_count = 0
+    for idea in ideas:
+        idea_id = idea.get("id")
+        score = float(idea.get("confidence_score") or 0)
+        if idea_id and score >= _AUTO_APPROVE_THRESHOLD:
+            try:
+                db.update("content_ideas", filters={"id": idea_id}, patch={"status": "approved"})
+                approved_count += 1
+            except Exception as e:
+                print(f"[orchestrator] auto-approve 실패 {idea_id[:8]}: {e}")
+    return approved_count
+
 # card_designer는 optional import (Playwright 미설치 환경 허용)
 try:
     from src.agents.card_designer import run as card_design_run
@@ -82,12 +99,34 @@ def run(client_slug: str) -> dict:
         ideas = content_generate(
             client_slug,
             topic=topic_hint,
-            count=3,
+            count=1,
             ab_variant=ab_variant,
             top_performing=top_performing or None,
         )
 
-        # Step 3: Slack 콘텐츠 아이디어 알림 (승인 대기)
+        # Step 2.5: Story 1개 강제 생성 (매 실행마다)
+        print(f"[{client_name}] Story 1개 생성 중...")
+        try:
+            story_ideas = content_generate(
+                client_slug,
+                topic=topic_hint,
+                count=1,
+                ab_variant=False,
+                top_performing=top_performing or None,
+            )
+            if story_ideas:
+                story_idea_id = story_ideas[0].get("id")
+                db.update("content_ideas", filters={"id": story_idea_id}, patch={"content_type": "story"})
+                print(f"[{client_name}] Story 생성 완료 (idea_id={story_idea_id[:8]}) → content_type=story 설정")
+        except Exception as e:
+            print(f"[{client_name}] Story 생성 실패 (비치명적): {e}")
+
+        # Step 3: 고신뢰도 아이디어 자동 승인 (≥0.85)
+        auto_approved = _auto_approve_ideas(ideas)
+        if auto_approved:
+            print(f"[{client_name}] 자동 승인 {auto_approved}개 (confidence ≥ {_AUTO_APPROVE_THRESHOLD})")
+
+        # Slack 콘텐츠 아이디어 알림
         slack_webhook = client.get("slack_channel_webhook") or None
         notify_content_ready(
             client_name=client_name,
@@ -96,13 +135,15 @@ def run(client_slug: str) -> dict:
             webhook_url=slack_webhook,
         )
 
-        # Step 4: 카드뉴스 생성 — 유선우 Slack 승인 후에만 실행 (approved 상태만 처리)
+        # Step 4: 카드뉴스 생성 — approved 상태 아이디어 처리 (자동 승인 포함)
         card_result: dict = {"status": "skipped", "reason": "card_designer unavailable"}
         if _CARD_DESIGNER_AVAILABLE:
-            print(f"[{client_name}] Step 3/3: 승인된 콘텐츠 카드뉴스 생성...")
+            print(f"[{client_name}] Step 3/3: 브랜드 드리븐 멀티슬라이드 카드뉴스 생성...")
             try:
                 card_result = card_design_run(client_slug)
-                print(f"[{client_name}] 카드뉴스 {card_result.get('designed', 0)}개 생성 완료")
+                designed = card_result.get('designed', 0)
+                total_slides = sum(r.get("slide_count", 1) for r in card_result.get("results", []) if r.get("success"))
+                print(f"[{client_name}] 카드뉴스 {designed}개 생성 완료 (총 {total_slides}장)")
             except Exception as e:
                 print(f"[{client_name}] 카드뉴스 생성 실패 (비치명적): {e}")
                 card_result = {"status": "error", "error": str(e)}
@@ -123,6 +164,7 @@ def run(client_slug: str) -> dict:
             "output": {
                 "snapshot_id": snapshot.get("snapshot_id"),
                 "content_count": len(ideas),
+                "auto_approved": auto_approved,
                 "trending_topics": trending_topics[:3],
                 "card_designed": card_result.get("designed", 0),
                 "published": publish_result.get("published", 0),
@@ -131,7 +173,7 @@ def run(client_slug: str) -> dict:
         })
 
         print(
-            f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개, "
+            f"[{client_name}] 완료 — 콘텐츠 {len(ideas)}개 (자동승인 {auto_approved}개), "
             f"카드뉴스 {card_result.get('designed', 0)}개, "
             f"게시 {publish_result.get('published', 0)}개"
         )
