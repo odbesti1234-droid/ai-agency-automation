@@ -793,7 +793,7 @@ def run(
 
     # Slack 알림
     _send_slack_notify(client_name, lm_id, hook, keyword, notion_url, slide_urls,
-                       client_row.get("slack_webhook_url"))
+                       client_row.get("slack_channel_webhook"))
 
     elapsed = time.time() - t0
     print(f"\n[lead_magnet:{client_slug}] ✅ 완료 ({elapsed:.1f}s)")
