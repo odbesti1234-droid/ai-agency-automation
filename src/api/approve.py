@@ -1,4 +1,4 @@
-"""콘텐츠 승인 API — Slack 버튼 → DB 상태 변경.
+"""콘텐츠 승인 API — Slack 버튼 → DB 상태 변경. v2
 
 엔드포인트:
     GET /approve?idea_id=UUID&action=approved|rejected&token=HMAC_TOKEN
@@ -22,6 +22,7 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from src.db.client import SupabaseClient
 
@@ -275,6 +276,58 @@ def make_trigger_url(client: str = "all") -> str:
     base = os.environ.get("APPROVAL_BASE_URL", "https://ai-agency-automation-production.up.railway.app").rstrip("/")
     token = _make_trigger_token(client)
     return f"{base}/trigger?client={client}&token={token}"
+
+
+class LeadMagnetRequest(BaseModel):
+    client: str
+    topic: str
+    keyword: str
+    info: str = ""
+    token: str
+
+
+@app.post("/lead-magnet")
+async def create_lead_magnet(req: LeadMagnetRequest) -> dict:
+    """리드마그넷 카드뉴스 + Notion 문서 자동 생성.
+
+    Body:
+        client  — 클라이언트 slug
+        topic   — 카드뉴스 주제
+        keyword — 댓글 트리거 키워드
+        info    — 제공할 핵심 정보 텍스트 (\\n 구분)
+        token   — HMAC 인증 토큰 (trigger:{client} 서명)
+    """
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+    expected = _make_trigger_token(req.client)
+    if not hmac.compare_digest(expected, req.token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    import threading
+    from src.agents.lead_magnet import run as lm_run
+
+    result_holder: dict = {}
+
+    def _run() -> None:
+        try:
+            result_holder.update(
+                lm_run(
+                    client_slug=req.client,
+                    topic=req.topic,
+                    info_raw=req.info,
+                    keyword=req.keyword,
+                )
+            )
+        except Exception as e:
+            result_holder["error"] = str(e)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=300)
+
+    if result_holder.get("status") == "done":
+        return result_holder
+    return {"status": "started", "detail": result_holder.get("error", "processing")}
 
 
 if __name__ == "__main__":
