@@ -566,15 +566,22 @@ def _generate_lm_content(
 
     resp = _claude.messages.create(
         model=_MODEL,
-        max_tokens=3000,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
     raw = resp.content[0].text.strip()
     # JSON 블록 추출
     if "```" in raw:
-        raw = raw.split("```")[1]
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else parts[0]
         if raw.startswith("json"):
             raw = raw[4:]
+    raw = raw.strip()
+    # { } 범위로 정확히 자르기
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start != -1 and end > start:
+        raw = raw[start:end]
     return json.loads(raw)
 
 
