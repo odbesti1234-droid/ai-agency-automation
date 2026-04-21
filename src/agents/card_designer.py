@@ -248,7 +248,7 @@ def _clean_cta(raw: str) -> str:
 # 슬라이드 1: 커버 — 훅 전면 배치
 # ─────────────────────────────────────────────────────────────────
 
-def _slide_cover(hook: str, brand_name: str, palette: dict, total: int) -> str:
+def _slide_cover(hook: str, brand_name: str, palette: dict, total: int, brand_photo_url: str | None = None) -> str:
     primary = palette["primary"]
     accent = palette["accent"]
     on_primary = palette["on_primary"]
@@ -260,16 +260,27 @@ def _slide_cover(hook: str, brand_name: str, palette: dict, total: int) -> str:
     hook_fs = 84 if max_line_len <= 8 else (72 if max_line_len <= 12 else (60 if max_line_len <= 16 else 50))
     dots_html = _make_dots(total, 1, accent)
 
+    if brand_photo_url:
+        bg_style = (
+            f"background-image: url('{brand_photo_url}');"
+            "background-size: cover; background-position: center;"
+        )
+        overlay = f"position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.72) 60%,rgba(0,0,0,0.88) 100%);z-index:0;"
+    else:
+        bg_style = f"background:{primary};"
+        overlay = "display:none;"
+
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><style>
 {_BASE_CSS}
   .wrap {{
     width:1080px; height:1080px; position:relative;
-    background:{primary};
+    {bg_style}
     display:flex; flex-direction:column;
     align-items:center; justify-content:center;
     padding:0 100px;
   }}
+  .overlay {{ {overlay} }}
   .frame {{
     position:absolute; inset:40px;
     border:1.5px solid rgba({rgb},0.45);
@@ -320,6 +331,7 @@ def _slide_cover(hook: str, brand_name: str, palette: dict, total: int) -> str:
   }}
 </style></head>
 <body><div class="wrap">
+  <div class="overlay"></div>
   <div class="frame"></div>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
@@ -442,6 +454,261 @@ def _slide_key_point(kp: str, slide_num: int, total: int, brand_name: str, palet
   {quote_html}
   <div class="kp-text">{kp_html}</div>
   {body_html}
+  <div class="footer">{_e(brand_name)}</div>
+</div></body></html>"""
+
+
+# ─────────────────────────────────────────────────────────────────
+# 슬라이드: PROBLEM — 공감형, 따뜻한 레이아웃
+# ─────────────────────────────────────────────────────────────────
+
+def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, palette: dict) -> str:
+    primary = palette["primary"]
+    accent = palette["accent"]
+    secondary = palette["secondary"]
+    on_primary = palette["on_primary"]
+    rgb = _hex_to_rgb(accent)
+    rgb_sec = _hex_to_rgb(secondary)
+
+    headline = slide.get("headline", "")
+    raw_sub = slide.get("subtext", "") or slide.get("text_content", "") or ""
+    dots_html = _make_dots(total, slide_num, accent)
+
+    bullets = [l.strip() for l in raw_sub.split("\n") if l.strip()][:3]
+    if not bullets and raw_sub:
+        bullets = [raw_sub[:70]]
+
+    bullet_items = "".join(
+        f'<div class="pain-item">{_e(b[:70])}</div>' for b in bullets
+    )
+    hl_fs = 50 if len(headline) <= 16 else (42 if len(headline) <= 22 else 34)
+
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><style>
+{_BASE_CSS}
+  .wrap {{
+    width:1080px; height:1080px; position:relative;
+    background: linear-gradient(155deg, {primary} 0%, #2D1810 100%);
+    display:flex; flex-direction:column;
+    justify-content:center;
+    padding:140px 90px 110px;
+  }}
+  .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
+  .role-badge {{
+    position:absolute; top:72px; left:80px;
+    font-size:12px; font-weight:300; color:{accent};
+    letter-spacing:6px; text-transform:uppercase; opacity:0.55;
+  }}
+  .empathy-intro {{
+    font-family:'Playfair Display',serif;
+    font-style:italic; font-size:22px; font-weight:400;
+    color:{secondary}; opacity:0.9; margin-bottom:24px;
+  }}
+  .headline {{
+    font-family:'Noto Serif KR','Malgun Gothic',serif;
+    font-size:{hl_fs}px; font-weight:700;
+    color:{on_primary}; line-height:1.4;
+    margin-bottom:36px; max-width:880px;
+  }}
+  .pain-list {{ display:flex; flex-direction:column; gap:14px; }}
+  .pain-item {{
+    border-left:3px solid {secondary};
+    padding:15px 22px;
+    background:rgba({rgb_sec},0.09);
+    font-size:23px; font-weight:400; color:{on_primary};
+    opacity:0.82; line-height:1.45; border-radius:0 6px 6px 0;
+  }}
+  .corner {{ position:absolute; width:24px; height:24px; }}
+  .corner.tl {{ top:40px; left:40px; border-top:1.5px solid rgba({rgb},0.35); border-left:1.5px solid rgba({rgb},0.35); }}
+  .corner.tr {{ top:40px; right:40px; border-top:1.5px solid rgba({rgb},0.35); border-right:1.5px solid rgba({rgb},0.35); }}
+  .corner.bl {{ bottom:40px; left:40px; border-bottom:1.5px solid rgba({rgb},0.35); border-left:1.5px solid rgba({rgb},0.35); }}
+  .corner.br {{ bottom:40px; right:40px; border-bottom:1.5px solid rgba({rgb},0.35); border-right:1.5px solid rgba({rgb},0.35); }}
+  .footer {{
+    position:absolute; bottom:56px; left:80px;
+    font-size:12px; font-weight:300; color:{on_primary}; opacity:0.3;
+    letter-spacing:4px; text-transform:uppercase;
+  }}
+</style></head>
+<body><div class="wrap">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div class="dots">{dots_html}</div>
+  <div class="role-badge">— PROBLEM</div>
+  <div class="empathy-intro">혹시 이런 적 있나요?</div>
+  <div class="headline">{_e(headline)}</div>
+  <div class="pain-list">{bullet_items}</div>
+  <div class="footer">{_e(brand_name)}</div>
+</div></body></html>"""
+
+
+# ─────────────────────────────────────────────────────────────────
+# 슬라이드: INSIGHT — 데이터 시각화, 숫자 앵커, 근거 배지
+# ─────────────────────────────────────────────────────────────────
+
+def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, palette: dict, insight_idx: int = 1) -> str:
+    primary = palette["primary"]
+    accent = palette["accent"]
+    on_primary = palette["on_primary"]
+    rgb = _hex_to_rgb(accent)
+
+    headline = slide.get("headline", "")
+    subtext = slide.get("subtext", "") or slide.get("text_content", "") or ""
+    dots_html = _make_dots(total, slide_num, accent)
+
+    num_str = f"{insight_idx:02d}"
+    hl_fs = 48 if len(headline) <= 16 else (40 if len(headline) <= 22 else 33)
+
+    data_block = ""
+    if subtext:
+        data_block = f'<div class="data-box"><div class="data-text">{_e(subtext[:110])}</div></div>'
+
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><style>
+{_BASE_CSS}
+  .wrap {{
+    width:1080px; height:1080px; position:relative;
+    background:{primary};
+    display:flex; flex-direction:column;
+    justify-content:center;
+    padding:140px 90px 110px;
+  }}
+  .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
+  .corner {{ position:absolute; width:28px; height:28px; }}
+  .corner.tl {{ top:40px; left:40px; border-top:2px solid {accent}; border-left:2px solid {accent}; }}
+  .corner.tr {{ top:40px; right:40px; border-top:2px solid {accent}; border-right:2px solid {accent}; }}
+  .corner.bl {{ bottom:40px; left:40px; border-bottom:2px solid {accent}; border-left:2px solid {accent}; }}
+  .corner.br {{ bottom:40px; right:40px; border-bottom:2px solid {accent}; border-right:2px solid {accent}; }}
+  .insight-badge {{
+    display:flex; align-items:baseline; gap:14px;
+    margin-bottom:20px;
+  }}
+  .insight-num {{
+    font-family:'Playfair Display',serif;
+    font-style:italic; font-size:96px; font-weight:700;
+    color:{accent}; line-height:0.9;
+  }}
+  .insight-label {{
+    font-size:13px; font-weight:300; color:{accent};
+    letter-spacing:6px; text-transform:uppercase; opacity:0.65;
+    padding-bottom:6px;
+  }}
+  .h-rule {{
+    width:64px; height:2px; background:{accent};
+    margin-bottom:24px; opacity:0.45;
+  }}
+  .headline {{
+    font-family:'Noto Serif KR','Malgun Gothic',serif;
+    font-size:{hl_fs}px; font-weight:700;
+    color:{on_primary}; line-height:1.4;
+    margin-bottom:24px; max-width:880px;
+  }}
+  .data-box {{
+    border:1px solid rgba({rgb},0.3);
+    padding:20px 26px;
+    background:rgba({rgb},0.07);
+    border-radius:4px;
+    max-width:840px;
+  }}
+  .data-text {{
+    font-size:22px; font-weight:300; color:{on_primary};
+    opacity:0.72; line-height:1.65;
+  }}
+  .footer {{
+    position:absolute; bottom:56px; left:80px;
+    font-size:12px; font-weight:300; color:{on_primary}; opacity:0.3;
+    letter-spacing:4px; text-transform:uppercase;
+  }}
+</style></head>
+<body><div class="wrap">
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div class="dots">{dots_html}</div>
+  <div class="insight-badge">
+    <span class="insight-num">{num_str}</span>
+    <span class="insight-label">INSIGHT</span>
+  </div>
+  <div class="h-rule"></div>
+  <div class="headline">{_e(headline)}</div>
+  {data_block}
+  <div class="footer">{_e(brand_name)}</div>
+</div></body></html>"""
+
+
+# ─────────────────────────────────────────────────────────────────
+# 슬라이드: SAVE — 반전 배경, FOMO 구조, 저장 유도
+# ─────────────────────────────────────────────────────────────────
+
+def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palette: dict) -> str:
+    accent = palette["accent"]
+    primary = palette["primary"]
+    on_accent = palette["on_accent"]
+    rgb_primary = _hex_to_rgb(primary)
+
+    headline = slide.get("headline", "이 카드 저장하면 얻는 것")
+    subtext = slide.get("subtext", "") or slide.get("text_content", "") or ""
+    dots_html = _make_dots(total, slide_num, primary)
+
+    hl_fs = 52 if len(headline) <= 16 else (44 if len(headline) <= 22 else 36)
+
+    bookmark_svg = (
+        f'<svg viewBox="0 0 48 48" fill="none" stroke="{primary}" stroke-width="2" '
+        f'stroke-linecap="round" stroke-linejoin="round" style="opacity:0.8;">'
+        f'<path d="M10 4h28v40l-14-10L10 44V4z"/></svg>'
+    )
+
+    benefit_block = (
+        f'<div class="benefit">{_e(subtext[:80])}</div>' if subtext else ""
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><style>
+{_BASE_CSS}
+  .wrap {{
+    width:1080px; height:1080px; position:relative;
+    background:{accent};
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding:0 90px; gap:0;
+  }}
+  .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
+  .save-icon {{ width:80px; height:80px; margin-bottom:28px; }}
+  .fomo-label {{
+    font-size:13px; font-weight:300; color:{primary};
+    letter-spacing:7px; text-transform:uppercase;
+    opacity:0.55; text-align:center; margin-bottom:18px;
+  }}
+  .headline {{
+    font-family:'Noto Serif KR','Malgun Gothic',serif;
+    font-size:{hl_fs}px; font-weight:700;
+    color:{primary}; line-height:1.35;
+    text-align:center; margin-bottom:28px; max-width:860px;
+  }}
+  .benefit {{
+    font-size:24px; font-weight:400; color:{primary};
+    opacity:0.65; text-align:center; line-height:1.6;
+    max-width:760px; margin-bottom:0;
+  }}
+  .save-cue {{
+    position:absolute; bottom:76px; left:50%; transform:translateX(-50%);
+    border:1px solid rgba({rgb_primary},0.38);
+    padding:10px 32px;
+    font-size:12px; font-weight:300; color:{primary};
+    letter-spacing:5px; text-transform:uppercase; white-space:nowrap;
+    opacity:0.7;
+  }}
+  .footer {{
+    position:absolute; bottom:52px; left:80px;
+    font-size:12px; font-weight:300; color:{primary}; opacity:0.3;
+    letter-spacing:4px; text-transform:uppercase;
+  }}
+</style></head>
+<body><div class="wrap">
+  <div class="dots">{dots_html}</div>
+  <div class="save-icon">{bookmark_svg}</div>
+  <div class="fomo-label">&#8212; SAVE THIS &#8212;</div>
+  <div class="headline">{_e(headline)}</div>
+  {benefit_block}
+  <div class="save-cue">&#8659; 지금 저장하세요</div>
   <div class="footer">{_e(brand_name)}</div>
 </div></body></html>"""
 
@@ -629,6 +896,7 @@ def generate_carousel_html(
     idea: dict,
     brand_voice: dict,
     client_name: str,
+    brand_photo_url: str | None = None,
 ) -> list[str]:
     """아이디어 1개를 H-P-I-S-C 유동 슬라이드(5-9장)로 변환.
 
@@ -644,30 +912,47 @@ def generate_carousel_html(
     slide_script = idea.get("slide_script")
 
     if slide_script and isinstance(slide_script, list) and len(slide_script) >= 5:
-        # 🎯 새 로직: 역할별 디스패치
+        # 🎯 역할별 차별화 디스패치: hook/problem/insight/save/cta 완전 분리
         total = len(slide_script)
+        insight_counter = 0
 
         for idx, slide_obj in enumerate(slide_script):
             role = slide_obj.get("role", "").lower()
             position = idx + 1
 
-            # 역할별 렌더링 함수 선택
             if role == "hook":
                 slide_html = _slide_cover(
                     hook=slide_obj.get("headline", hook),
                     brand_name=client_name,
                     palette=palette,
                     total=total,
+                    brand_photo_url=brand_photo_url,
                 )
-            elif role in ("problem", "insight", "save"):
-                slide_html = _slide_key_point(
-                    kp=slide_obj.get("headline", slide_obj.get("text_content", "")),
+            elif role == "problem":
+                slide_html = _slide_problem(
+                    slide=slide_obj,
                     slide_num=position,
                     total=total,
                     brand_name=client_name,
                     palette=palette,
-                    body=slide_obj.get("text_content", slide_obj.get("subtext", "")),
-                    quote=slide_obj.get("quote", ""),
+                )
+            elif role == "insight":
+                insight_counter += 1
+                slide_html = _slide_insight(
+                    slide=slide_obj,
+                    slide_num=position,
+                    total=total,
+                    brand_name=client_name,
+                    palette=palette,
+                    insight_idx=insight_counter,
+                )
+            elif role == "save":
+                slide_html = _slide_save(
+                    slide=slide_obj,
+                    slide_num=position,
+                    total=total,
+                    brand_name=client_name,
+                    palette=palette,
                 )
             elif role == "cta":
                 raw_cta = slide_obj.get("text_content", slide_obj.get("headline", "저장하고 다음에 다시 보세요"))
@@ -678,13 +963,14 @@ def generate_carousel_html(
                     total=total,
                 )
             else:
-                slide_html = _slide_key_point(
-                    kp=slide_obj.get("headline", slide_obj.get("text_content", "")),
+                insight_counter += 1
+                slide_html = _slide_insight(
+                    slide=slide_obj,
                     slide_num=position,
                     total=total,
                     brand_name=client_name,
                     palette=palette,
-                    body=slide_obj.get("text_content", slide_obj.get("subtext", "")),
+                    insight_idx=insight_counter,
                 )
 
             slides.append(slide_html)
@@ -703,7 +989,7 @@ def generate_carousel_html(
 
         total = 1 + len(key_points) + 1  # 커버 + 콘텐츠 + CTA
 
-        slides.append(_slide_cover(hook, client_name, palette, total))
+        slides.append(_slide_cover(hook, client_name, palette, total, brand_photo_url=brand_photo_url))
         for i, kp in enumerate(key_points):
             slides.append(_slide_key_point(kp, i + 2, total, client_name, palette))
         slides.append(_slide_cta(client_name, palette, cta_text, total))
@@ -873,6 +1159,10 @@ def run(client_slug: str) -> dict:
         client_id = client_row["id"]
         client_name = client_row.get("name", client_slug)
         brand_voice: dict = client_row.get("brand_voice") or {}
+        brand_photos: list = client_row.get("brand_photos") or []
+        brand_photo_url: str | None = brand_photos[0]["url"] if brand_photos else None
+        if brand_photo_url:
+            print(f"[card_designer:{client_slug}] 브랜드 사진 사용: {brand_photo_url[:60]}...")
 
         # approved & design_url IS NULL 아이디어 조회
         all_approved = db_client.select(
@@ -906,7 +1196,7 @@ def run(client_slug: str) -> dict:
 
             # 캐러셀 HTML 생성
             try:
-                slides_html = generate_carousel_html(idea, brand_voice, client_name)
+                slides_html = generate_carousel_html(idea, brand_voice, client_name, brand_photo_url=brand_photo_url)
             except Exception as e:
                 print(f"  → HTML 생성 실패: {e}")
                 errors.append({"idea_id": idea_id, "error": str(e)})
@@ -1003,7 +1293,11 @@ def run(client_slug: str) -> dict:
         if success_results:
             pending_by_id = {idea["id"]: idea for idea in pending}
             designed_ideas = [
-                {**pending_by_id[r["idea_id"]], "design_url": r["image_url"]}
+                {
+                    **pending_by_id[r["idea_id"]],
+                    "design_url": r["image_url"],
+                    "carousel_urls": r.get("carousel_urls", []),
+                }
                 for r in success_results
                 if r["idea_id"] in pending_by_id
             ]

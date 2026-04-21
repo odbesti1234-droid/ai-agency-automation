@@ -534,7 +534,21 @@ def _generate_lm_content(
 ) -> dict:
     """Claude로 리드마그넷 슬라이드 스크립트 + Notion 문서 본문 생성."""
     brand_json = json.dumps(brand_voice, ensure_ascii=False)[:800]
-    prompt = f"""너는 인스타그램 리드마그넷 전문 카피라이터다.
+    niche = brand_voice.get("niche", "") or brand_voice.get("tone", "") or client_name
+    tone = brand_voice.get("tone", "친근한")
+    prompt = f"""너는 {niche} 분야 인스타그램 인플루언서야. 팔로워한테 {topic}에 대해 진짜 쓸모있는 자료를 공유하려고 해.
+
+⚠️ 절대 쓰면 안 되는 표현 (AI 티 나는 말투):
+- "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
+- "첫째, 둘째, 셋째" 나열
+- "중요한 점은", "결론적으로", "참고로 말씀드리면"
+- 설명서 같은 문어체나 딱딱한 존댓말
+
+✅ 이렇게 써 (실제 인플루언서 말투):
+- 직접 경험한 것처럼 ("이거 진짜 몰랐는데", "써봤는데 효과 장난 아니야")
+- 구체적인 숫자랑 상황 예시
+- 팔로워가 "저장해야겠다" 싶게 만드는 실용 팁
+- 브랜드 톤: {tone}
 
 [클라이언트] {client_name}
 [브랜드 보이스] {brand_json}
@@ -546,43 +560,68 @@ def _generate_lm_content(
 아래 JSON을 반환한다. 다른 텍스트 없음.
 
 {{
-  "hook": "팔로워를 멈추게 하는 훅 문장 (40자 이내, {keyword} 정보에 대한 강한 궁금증 유발)",
-  "tease_title": "이 자료 안에 담긴 내용 제목 (30자 이내)",
-  "tease_contents": ["목차 항목 6개, 각 25자 이내"],
-  "preview1_heading": "미리보기1 소제목 (20자 이내)",
-  "preview1_bullets": ["공개할 정보 3-4개, 각 35자 이내. 실제로 도움 되는 팁"],
-  "preview2_heading": "미리보기2 소제목 (20자 이내)",
-  "preview2_bullets": ["공개할 정보 3-4개, 각 35자 이내. 실제로 도움 되는 팁"],
-  "blurred_items": ["블러 처리할 나머지 정보 4개 (독자가 궁금해할 것들, 각 30자 이내)"],
+  "hook": "팔로워가 스크롤 멈추게 하는 훅 (40자 이내, 실제 사람이 쓰는 말투, {keyword} 궁금증 유발)",
+  "tease_title": "자료 안에 담긴 내용 제목 (30자 이내, 구어체)",
+  "tease_contents": ["목차 항목 6개, 각 25자 이내, 자연스러운 말투"],
+  "preview1_heading": "미리보기1 소제목 (20자 이내, 구어체)",
+  "preview1_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용"],
+  "preview2_heading": "미리보기2 소제목 (20자 이내, 구어체)",
+  "preview2_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용"],
+  "blurred_items": ["블러 처리할 정보 4개, 각 30자 이내, 독자가 너무 궁금해할 것들"],
   "notion_title": "Notion 문서 제목",
   "notion_sections": [
     {{
       "heading": "섹션 제목",
-      "content": "섹션 본문 (마크다운 허용, 실제로 도움이 되는 상세한 내용)"
+      "content": "섹션 본문 (마크다운 허용, 구체적이고 실용적인 내용, 구어체)"
     }}
   ],
   "hashtags": ["#태그", "..."]
 }}"""
 
-    resp = _claude.messages.create(
-        model=_MODEL,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    raw = resp.content[0].text.strip()
-    # JSON 블록 추출
-    if "```" in raw:
-        parts = raw.split("```")
-        raw = parts[1] if len(parts) > 1 else parts[0]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
-    # { } 범위로 정확히 자르기
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    if start != -1 and end > start:
-        raw = raw[start:end]
-    return json.loads(raw)
+    for attempt in range(1, 4):
+        resp = _claude.messages.create(
+            model=_MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+
+        # 코드블록 제거
+        if "```" in raw:
+            parts = raw.split("```")
+            for part in parts:
+                p = part.strip()
+                if p.startswith("json"):
+                    raw = p[4:].strip()
+                    break
+                elif p.startswith("{"):
+                    raw = p
+                    break
+
+        # { } 범위로 정확히 자르기
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start != -1 and end > start:
+            raw = raw[start:end]
+
+        # 파싱 시도 1: 직접
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+
+        # 파싱 시도 2: trailing comma 제거 + 제어문자 정리
+        try:
+            import re as _re
+            cleaned = _re.sub(r',\s*([}\]])', r'\1', raw)
+            cleaned = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', cleaned)
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        print(f"[lead_magnet] JSON 파싱 실패 (시도 {attempt}/3), 재시도...")
+
+    raise ValueError(f"Claude 생성 실패: JSON 파싱 3회 모두 실패\n원본: {raw[:300]}")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -791,9 +830,50 @@ def run(
     except Exception as e:
         print(f"[lead_magnet:{client_slug}] DB 저장 실패 (비치명적): {e}")
 
-    # Slack 알림
-    _send_slack_notify(client_name, lm_id, hook, keyword, notion_url, slide_urls,
-                       client_row.get("slack_channel_webhook"))
+    # content_ideas INSERT → 승인 파이프라인 연동
+    content_idea_id: str | None = None
+    try:
+        from src.api.approve import make_approve_url  # noqa: PLC0415
+        caption_text = (
+            f"{hook}\n\n"
+            f"댓글에 '{keyword}' 남겨주시면 전체 자료 드려요 👇\n\n"
+            + " ".join(lm.get("hashtags", []))
+        )
+        ci_row = db_client.insert("content_ideas", {
+            "client_id": client_id,
+            "content_type": "feed",
+            "hook": hook,
+            "caption": caption_text[:2200],
+            "hashtags": lm.get("hashtags", []),
+            "carousel_urls": slide_urls,
+            "design_url": cover_url,
+            "status": "design_ready",
+            "human_approved": False,
+        })
+        content_idea_id = ci_row.get("id")
+        print(f"[lead_magnet:{client_slug}] content_ideas 저장 완료 (id={str(content_idea_id)[:8]})")
+    except Exception as e:
+        print(f"[lead_magnet:{client_slug}] content_ideas 저장 실패 (비치명적): {e}")
+
+    # Slack 알림 — 승인 버튼 포함
+    try:
+        from src.notifications.slack import notify_design_ready  # noqa: PLC0415
+        idea_for_notify = {
+            "id": content_idea_id,
+            "hook": hook,
+            "design_url": cover_url,
+            "carousel_urls": slide_urls,
+            "content_type": "feed",
+            "hashtags": lm.get("hashtags", []),
+        }
+        slack_webhook = client_row.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
+        notify_design_ready(
+            client_name=client_name,
+            ideas=[idea_for_notify],
+            webhook_url=slack_webhook,
+        )
+    except Exception as e:
+        print(f"[lead_magnet:{client_slug}] Slack 알림 실패: {e}")
 
     elapsed = time.time() - t0
     print(f"\n[lead_magnet:{client_slug}] ✅ 완료 ({elapsed:.1f}s)")

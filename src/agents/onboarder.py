@@ -174,7 +174,6 @@ def run(client_slug: str) -> dict:
             "output_tokens": usage.output_tokens,
             "cost_usd": cost,
             "ended_at": datetime.now(timezone.utc).isoformat(),
-            "duration_seconds": round(duration, 2),
         })
 
         _notify_onboarding_complete(
@@ -200,8 +199,7 @@ def run(client_slug: str) -> dict:
                 "error_type": type(e).__name__,
                 "error_message": str(e),
                 "ended_at": datetime.now(timezone.utc).isoformat(),
-                "duration_seconds": round(duration, 2),
-            })
+                })
         except Exception:
             pass
         return {"status": "error", "client": client_slug, "error": str(e)}

@@ -19,16 +19,25 @@ _claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 def extract(topic: str, client_name: str, brand_voice: dict) -> str:
     """주제 → 독자에게 즉시 유용한 핵심 정보 5~7개 (줄바꿈 구분)."""
     niche = brand_voice.get("niche", "") or brand_voice.get("tone", "") or client_name
-    prompt = f"""너는 {niche} 분야 인플루언서 콘텐츠 전문가다.
+    tone = brand_voice.get("tone", "친근한")
+    prompt = f"""너는 {niche} 분야에서 실제로 활동하는 인플루언서야.
+오늘 팔로워한테 {topic}에 대한 진짜 쓸모있는 정보를 공유하려고 해.
+
+⚠️ 이렇게 쓰면 안 됨 (AI 티 나는 표현):
+- "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
+- "첫째, 둘째, 셋째" 식의 공식적인 나열
+- "중요한 점은", "결론적으로", "참고로 말씀드리면"
+- 설명서 같은 문어체, 딱딱한 존댓말
+
+✅ 이렇게 써 (실제 사람 말투):
+- 직접 겪은 것처럼 자연스럽게 ("이거 진짜 몰랐는데", "써봤는데 대박이었어")
+- 구체적인 숫자, 상황 예시 포함
+- 바로 써먹을 수 있는 실용 팁 위주
+- 브랜드 톤: {tone}
 
 주제: {topic}
 
-이 주제에 대해 인스타그램 팔로워가 "와, 이거 진짜 도움된다!"라고 느낄
-실용적인 핵심 정보 5~7개를 작성하라.
-
-규칙:
-- 각 항목은 구체적이고 즉시 실행 가능해야 함
-- 전문 용어 최소화, 쉬운 언어
+팔로워가 "저장해야겠다" 싶게 만드는 핵심 정보 5~7개.
 - 각 항목 앞에 "- " 붙이기
 - 목록만 반환, 다른 텍스트 없음"""
     resp = _claude.messages.create(

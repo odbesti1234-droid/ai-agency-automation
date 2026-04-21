@@ -64,13 +64,13 @@
 
 ## 📅 Day 12 — 검증 + Railway 반영
 
-### ⬜ Action 12.1 — 전체 피드백 루프 E2E 검증
+### ✅ Action 12.1 — 전체 피드백 루프 E2E 검증
 - reporter 실행 → best_hooks 추출 → brand_voice.weekly_brief 업데이트 확인
 - 다음 orchestrator 실행 → weekly_brief 기반 콘텐츠 생성 확인
 - Supabase에서 3개 클라이언트 데이터 격리 확인
 → **Claude 직접**
 
-### ⬜ Action 12.2 — Railway 배포 + cron 확인
+### ✅ Action 12.2 — Railway 배포 + cron 확인
 - 변경사항 git push → Railway 자동 배포 확인
 - cron 스케줄 유지 (매일 09:00 KST, 일요일 주간 리포트)
 → **Claude 직접**
@@ -79,11 +79,11 @@
 
 ## 🎯 W3 Done Criteria
 
-- [ ] 같은 주제로 A형(정보)/B형(감성) 2가지 훅 자동 생성
-- [ ] 지난 주 성과 상위 콘텐츠 스타일이 이번 주 프롬프트에 자동 반영
-- [ ] 3개 클라이언트(F&B·부동산·AI) 동시 독립 실행 확인
-- [ ] reporter → content_generator 피드백 루프 작동
-- [ ] Railway 자동 배포 + cron 정상 유지
+- [x] 같은 주제로 A형(정보)/B형(감성) 2가지 훅 자동 생성
+- [x] 지난 주 성과 상위 콘텐츠 스타일이 이번 주 프롬프트에 자동 반영
+- [x] 3개 클라이언트(F&B·부동산·AI) 동시 독립 실행 확인
+- [x] reporter → content_generator 피드백 루프 작동
+- [x] Railway 자동 배포 + cron 정상 유지
 
 ---
 

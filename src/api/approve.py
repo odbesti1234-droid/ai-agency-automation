@@ -176,6 +176,50 @@ def make_approve_url(idea_id: str, action: str, stage: str = "content") -> str:
     return f"{base}/approve?idea_id={idea_id}&action={action}&token={token}&stage={stage}"
 
 
+def make_feedback_url(idea_id: str, rating: str) -> str:
+    """게시 후 👍/👎 피드백 URL. rating: 'good' | 'bad'"""
+    base = os.environ.get("APPROVAL_BASE_URL", "http://localhost:8000").rstrip("/")
+    token = hmac.new(_SECRET.encode(), f"feedback:{idea_id}:{rating}".encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{base}/feedback?idea_id={idea_id}&rating={rating}&token={token}"
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def record_feedback(
+    idea_id: str = Query(...),
+    rating: str = Query(...),
+    token: str = Query(...),
+) -> HTMLResponse:
+    """게시된 콘텐츠 👍/👎 피드백 수집."""
+    if rating not in ("good", "bad"):
+        raise HTTPException(status_code=400, detail="rating must be good or bad")
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+
+    expected = hmac.new(_SECRET.encode(), f"feedback:{idea_id}:{rating}".encode(), hashlib.sha256).hexdigest()[:16]
+    if not hmac.compare_digest(expected, token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    db = SupabaseClient()
+    try:
+        rows = db.select("content_ideas", filters={"id": idea_id})
+        if not rows:
+            return HTMLResponse(content=_html_page("오류", "콘텐츠를 찾을 수 없습니다.", success=False))
+        idea = rows[0]
+        client_id = idea.get("client_id")
+        rating_int = 1 if rating == "good" else -1
+        db.insert("feedback", {
+            "client_id": client_id,
+            "idea_id": idea_id,
+            "rating": rating_int,
+        })
+        icon = "👍" if rating == "good" else "👎"
+        return HTMLResponse(content=_html_page(f"{icon} 피드백 감사합니다", "의견이 다음 콘텐츠 전략에 반영됩니다.", success=True))
+    except Exception as e:
+        return HTMLResponse(content=_html_page("오류", str(e)[:200], success=False), status_code=500)
+    finally:
+        db.close()
+
+
 def _make_brief_token(client_slug: str) -> str:
     msg = f"brief:{client_slug}".encode()
     return hmac.new(_SECRET.encode(), msg, hashlib.sha256).hexdigest()[:16]

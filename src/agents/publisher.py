@@ -47,16 +47,26 @@ def _ig_create_container(
     ig_account_id: str,
     access_token: str,
     image_url: str,
-    caption: str,
+    caption: str | None = None,
+    is_carousel_item: bool = False,
 ) -> str:
-    """미디어 컨테이너 생성 → creation_id 반환."""
+    """미디어 컨테이너 생성 → creation_id 반환.
+
+    Args:
+        is_carousel_item: True면 캐러셀 아이템(자식), False면 단일 이미지/부모
+    """
+    params = {
+        "image_url": image_url,
+        "access_token": access_token,
+    }
+    if is_carousel_item:
+        params["is_carousel_item"] = "true"
+    else:
+        params["caption"] = caption or ""
+
     resp = httpx.post(
         f"{_GRAPH_BASE}/{ig_account_id}/media",
-        params={
-            "image_url": image_url,
-            "caption": caption,
-            "access_token": access_token,
-        },
+        params=params,
         timeout=30,
     )
     data = resp.json()
@@ -65,6 +75,57 @@ def _ig_create_container(
     creation_id = data.get("id")
     if not creation_id:
         raise RuntimeError(f"creation_id 없음: {data}")
+    return creation_id
+
+
+def _ig_create_carousel_container(
+    ig_account_id: str,
+    access_token: str,
+    children: list[str],
+    caption: str,
+) -> str:
+    """N개 child container → parent carousel container 생성."""
+    params = {
+        "media_type": "CAROUSEL",
+        "children": ",".join(children),
+        "caption": caption,
+        "access_token": access_token,
+    }
+    resp = httpx.post(
+        f"{_GRAPH_BASE}/{ig_account_id}/media",
+        params=params,
+        timeout=30,
+    )
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(f"IG carousel container 오류: {data['error'].get('message', data['error'])}")
+    creation_id = data.get("id")
+    if not creation_id:
+        raise RuntimeError(f"carousel creation_id 없음: {data}")
+    return creation_id
+
+
+def _ig_create_story_container(
+    ig_account_id: str,
+    access_token: str,
+    image_url: str,
+) -> str:
+    """스토리 미디어 컨테이너 생성 → creation_id 반환."""
+    resp = httpx.post(
+        f"{_GRAPH_BASE}/{ig_account_id}/media",
+        params={
+            "image_url": image_url,
+            "media_type": "STORIES",
+            "access_token": access_token,
+        },
+        timeout=30,
+    )
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(f"IG story container 오류: {data['error'].get('message', data['error'])}")
+    creation_id = data.get("id")
+    if not creation_id:
+        raise RuntimeError(f"story creation_id 없음: {data}")
     return creation_id
 
 
@@ -125,7 +186,6 @@ def _log_agent_run(
         "output": output_data or {},
         "started_at": (started_at or now).isoformat(),
         "ended_at": now.isoformat(),
-        "duration_seconds": round(duration or 0, 2),
     }
     if error_msg:
         row["error_message"] = error_msg
@@ -161,13 +221,15 @@ def run(client_slug: str) -> dict:
         client_name: str = client_row.get("name", client_slug)
         slack_webhook: str | None = client_row.get("slack_channel_webhook") or None
 
-        # 클라이언트별 IG 토큰 (clients.ig_access_token) 또는 글로벌 env
+        # IG 자격증명: 환경변수에서만 읽기 (DB에서 절대 읽지 않음)
+        # 패턴: {SLUG_UPPER}_IG_ACCESS_TOKEN / {SLUG_UPPER}_IG_ACCOUNT_ID → 글로벌 fallback
+        slug_upper = client_slug.upper().replace("-", "_")
         ig_access_token: str = (
-            client_row.get("ig_access_token")
+            os.environ.get(f"{slug_upper}_IG_ACCESS_TOKEN")
             or os.environ.get("IG_ACCESS_TOKEN", "")
         )
         ig_account_id: str = (
-            client_row.get("ig_account_id")
+            os.environ.get(f"{slug_upper}_IG_ACCOUNT_ID")
             or os.environ.get("IG_ACCOUNT_ID", "")
         )
 
@@ -193,6 +255,29 @@ def run(client_slug: str) -> dict:
         )
         ready = [r for r in all_final if r.get("human_approved") is True and r.get("design_url")]
 
+        # 오늘 이미 게시된 수 확인 (Meta API 25포스트/일 한도)
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        try:
+            today_published = db_client.select(
+                "content_ideas",
+                filters={"client_id": client_id},
+                limit=50,
+            )
+            published_today = sum(
+                1 for r in today_published
+                if r.get("status") == "published"
+                and (r.get("published_at") or "").startswith(today_str)
+            )
+        except Exception:
+            published_today = 0
+
+        MAX_DAILY_POSTS = 25
+        remaining_quota = max(0, MAX_DAILY_POSTS - published_today)
+        if len(ready) > remaining_quota:
+            print(f"[publisher] 일일 한도 도달 — {len(ready) - remaining_quota}개 내일로 연기 (오늘 이미 {published_today}개 게시)")
+            ready = ready[:remaining_quota]
+
         if not ready:
             print(f"[publisher:{client_slug}] 게시 대기 아이디어 없음")
             _log_agent_run(
@@ -213,6 +298,7 @@ def run(client_slug: str) -> dict:
         for idea in ready:
             idea_id: str = idea["id"]
             hook_preview = idea.get("hook", "")[:40]
+            carousel_urls = idea.get("carousel_urls") or []
             design_url: str = idea.get("design_url", "")
             print(f"[publisher:{client_slug}] 처리 중 [{idea_id[:8]}] {hook_preview}...")
 
@@ -223,11 +309,36 @@ def run(client_slug: str) -> dict:
                 try:
                     caption = _build_caption(idea)
 
-                    print(f"  → Step 1: 미디어 컨테이너 생성... (시도 {attempt}/3)")
-                    creation_id = _ig_create_container(
-                        ig_account_id, ig_access_token, design_url, caption
-                    )
-                    print(f"  → Step 1 완료 (creation_id={creation_id})")
+                    # 캐러셀 vs 단일 이미지 판별
+                    if len(carousel_urls) > 1:
+                        print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중... (시도 {attempt}/3)")
+                        # 각 슬라이드별 child container 생성
+                        child_ids = []
+                        for i, slide_url in enumerate(carousel_urls, 1):
+                            child_id = _ig_create_container(
+                                ig_account_id, ig_access_token,
+                                image_url=slide_url,
+                                is_carousel_item=True,
+                            )
+                            child_ids.append(child_id)
+                            print(f"    ├─ 슬라이드 {i}/{len(carousel_urls)}: {child_id}")
+                            time.sleep(1)  # API rate limit 방지
+
+                        # parent carousel container 생성
+                        creation_id = _ig_create_carousel_container(
+                            ig_account_id, ig_access_token,
+                            children=child_ids,
+                            caption=caption,
+                        )
+                        print(f"  → Step 1 완료 (carousel creation_id={creation_id}, children={len(child_ids)})")
+                    else:
+                        # 단일 이미지
+                        image_url = carousel_urls[0] if carousel_urls else design_url
+                        print(f"  → Step 1: 단일 이미지 컨테이너 생성... (시도 {attempt}/3)")
+                        creation_id = _ig_create_container(
+                            ig_account_id, ig_access_token, image_url, caption
+                        )
+                        print(f"  → Step 1 완료 (creation_id={creation_id})")
 
                     # IG API 권장: 컨테이너 준비 대기 (최대 30초)
                     time.sleep(5)
@@ -269,6 +380,25 @@ def run(client_slug: str) -> dict:
             published_ideas.append({**idea, "ig_post_id": ig_post_id})
             results.append({"idea_id": idea_id, "ig_post_id": ig_post_id, "success": True})
             print(f"[publisher:{client_slug}] ✅ {idea_id[:8]} → published (ig_post_id={ig_post_id})")
+
+            # Story URL 있으면 별도 스토리 게시 (비치명적 — 실패해도 계속)
+            story_url: str | None = idea.get("story_url")
+            if story_url:
+                try:
+                    print(f"  → Story 게시 시도 ({idea_id[:8]})...")
+                    story_creation_id = _ig_create_story_container(
+                        ig_account_id, ig_access_token, story_url
+                    )
+                    time.sleep(3)
+                    story_post_id = _ig_publish(ig_account_id, ig_access_token, story_creation_id)
+                    print(f"  → Story 게시 완료 (story_post_id={story_post_id})")
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={"ig_story_post_id": story_post_id},
+                    )
+                except Exception as e:
+                    print(f"  → Story 게시 실패 (비치명적): {e}")
 
         duration = time.time() - t0
         publish_count = len([r for r in results if r["success"]])

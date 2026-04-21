@@ -27,6 +27,7 @@ import schedule
 import uvicorn
 
 from src.agents.orchestrator import run_all_active as _orchestrator_run_all
+from src.agents.feedback_learner import run_all_active as feedback_learner_run_all
 from src.agents.designer import run_all_active as designer_run_all_active
 from src.agents.reporter import run_all_active as reporter_run_all_active
 from src.agents.onboarder import run_pending as onboarder_run_pending
@@ -42,64 +43,26 @@ def _utc_hour_for_kst(kst_hour: int) -> int:
 
 
 def daily_job() -> None:
-    """매일 09:00 KST: 어제 성과 피드백 주입 → trend_scan → 콘텐츠 생성."""
-    from src.db.client import SupabaseClient
-    from src.agents.content_generator import generate
-    from src.agents.trend_scanner import scan
-
+    """매일 09:00 KST: trend_scan → info_extract → lead_magnet 생성 → Slack 승인 요청."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] daily_job 시작 — {now.isoformat()}")
-
-    db = SupabaseClient()
-    try:
-        clients = db.select("clients", filters={"is_active": True})
-    finally:
-        db.close()
-
-    ok = 0
-    for client in clients:
-        slug = client.get("slug", "")
-        if not slug:
-            continue
-        try:
-            # 1단계: 트렌드 스캔
-            scan(slug)
-
-            # 2단계: 콘텐츠 생성
-            db_refresh = SupabaseClient()
-            try:
-                client_rows = db_refresh.select("clients", filters={"slug": slug})
-                if client_rows:
-                    bv = client_rows[0].get("brand_voice") or {}
-                    topic = bv.get("weekly_brief") or None
-                    top_hooks_raw = bv.get("daily_feedback", {}).get("top_performing_hooks", [])
-                    top_performing = [{"hook": h["hook"], "confidence_score": h["confidence"]} for h in top_hooks_raw]
-                else:
-                    topic = None
-                    top_performing = []
-            finally:
-                db_refresh.close()
-
-            if topic:
-                print(f"[Cron] {slug} — 브리프 사용: {topic[:60]}")
-            if top_performing:
-                print(f"[Cron] {slug} — 상위 훅 {len(top_performing)}개 참고")
-
-            generate(slug, topic=topic)
-            ok += 1
-        except Exception as e:
-            print(f"[Cron] {slug} 오류: {e}")
-
-    print(f"[Cron] daily_job 완료 — {ok}/{len(clients)} 성공")
+    results = _orchestrator_run_all()
+    ok = sum(1 for r in results if r.get("status") == "completed")
+    print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
 
 
 def weekly_report_job() -> None:
-    """매주 일요일 18:00 KST (09:00 UTC): 주간 리포트."""
+    """매주 일요일 18:00 KST (09:00 UTC): 주간 리포트 + 피드백 학습 분석."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] weekly_report 시작 — {now.isoformat()}")
     results = reporter_run_all_active()
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] weekly_report 완료 — {ok}/{len(results)} 성공")
+
+    print(f"[Cron] feedback_learner 시작 — {now.isoformat()}")
+    fb_results = feedback_learner_run_all()
+    fb_ok = sum(1 for r in fb_results if r.get("status") == "completed")
+    print(f"[Cron] feedback_learner 완료 — {fb_ok}/{len(fb_results)} 성공")
 
 
 def onboarding_poll_job() -> None:

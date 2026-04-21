@@ -23,6 +23,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from src.db.client import db
+from src.utils.embedding import embed
 
 load_dotenv()
 
@@ -43,9 +44,18 @@ _SYSTEM_STATIC = """[ROLE]
 [MISSION]
 주어진 브랜드 보이스와 주제를 결합해 Instagram에 올릴 수 있는 콘텐츠 아이디어 {count}개를 생성한다.
 
+[HOOK FORMULA — 5가지 공식 로테이션 필수]
+아이디어마다 아래 5가지 공식 중 하나를 선택한다. 동일 공식 연속 2회 초과 금지.
+1. number   — 숫자/수치 선언: "주 3회 이것만 하면 단골이 23% 늡니다"
+2. reversal — 반전/역설:      "맛집 블로거들이 절대 안 알려주는 이유가 있습니다"
+3. question — 강한 질문:      "당신은 제철 생선을 제대로 고를 수 있나요?"
+4. reveal   — 비밀 폭로:      "오늘 몇 개 남았는지 공개합니다"
+5. empathy  — 공감 입장:      "처음 봤을 때 저도 믿지 않았습니다"
+선택한 공식 이름을 hook_formula 필드에 반드시 기록한다.
+
 [RULES]
 반드시:
-- 훅은 80자 이내, 첫 문장이 질문이거나 놀라운 사실 또는 숫자
+- 훅은 80자 이내, hook_formula 공식 구조 준수
 - 해시태그 15~30개 (브랜드 고유 + 업종 + 로컬 + 트렌드)
 - confidence_score 자체 평가 필수 (0.0~1.0)
 - 브랜드 보이스의 forbid_keywords 절대 사용 금지
@@ -62,7 +72,9 @@ _SYSTEM_STATIC = """[ROLE]
   {
     "content_type": "reel | feed | story",
     "hook": "첫 3초 시선 강탈 문장 (80자 이내)",
+    "hook_formula": "number | reversal | question | reveal | empathy",
     "caption": "본문 (이모지 포함, 2200자 이내)",
+    "key_points": ["카드 슬라이드에 표시할 핵심 포인트 3~7개, 각 60자 이내, 인사이트 깊이에 따라 개수 유동. 소비자가 바로 행동하거나 저장하고 싶어지는 구체적 문장으로"],
     "hashtags": ["#tag", ...],
     "script_outline": {
       "scene_1": "0-3초: ...",
@@ -107,6 +119,7 @@ A/B 테스트를 위해 같은 주제를 서로 다른 감성으로 표현하는
     "content_type": "reel | feed | story",
     "hook": "첫 3초 시선 강탈 문장 (80자 이내)",
     "caption": "본문 (이모지 포함, 2200자 이내)",
+    "key_points": ["카드 슬라이드에 표시할 핵심 포인트 3~7개, 각 60자 이내, 인사이트 깊이에 따라 개수 유동"],
     "hashtags": ["#tag", ...],
     "script_outline": {
       "scene_1": "0-3초: ...",
@@ -134,39 +147,98 @@ A/B 테스트를 위해 같은 주제를 서로 다른 감성으로 표현하는
 # 슬라이드 스크립트 생성 프롬프트 (instagram-viral 3-B/3-C 로직 통합)
 # ──────────────────────────────────────────────
 _SYSTEM_SLIDE_SCRIPT = """[ROLE]
-너는 인스타그램 바이럴 카드뉴스 슬라이드 스크립터 + 비주얼 디렉터다.
-instagram-viral Agent 3-B (Caption Architect) + Agent 3-C (Visual Concept Guide) 역할을 동시에 수행한다.
+너는 인스타그램 바이럴 카드뉴스 전문 카피라이터 + 비주얼 디렉터다.
+저장율 8%+, 체류시간 12초+를 달성하는 슬라이드 구조를 설계한다.
 
 [MISSION]
-주어진 콘텐츠 아이디어를 5-슬라이드 카드뉴스 스크립트로 변환한다.
+주어진 콘텐츠 아이디어를 H-P-I-S-C 유동 슬라이드(5-9장)로 변환한다.
+각 슬라이드는 역할이 다르며, 시각 언어도 완전히 달라야 한다.
 
-[5-슬라이드 구조 — 절대 변경 금지]
-1. hook     — 엄지 멈춤. 강렬한 질문/숫자/주장. 텍스트 15자 이내. 전체 화면 임팩트.
-2. story    — 문제 공감. 독자의 페인포인트를 2-3줄로 서술. 공감 유도.
-3. proof    — 근거/증거. 데이터, 후기, Before-After, 전문가 인용. 신뢰 구축.
-4. menu     — 핵심 정보 전달. 리스트/단계/비교표. 저장하고 싶은 실용 정보.
-5. cta      — 행동 유도. "저장하세요", "팔로우", DM 유도, 링크 클릭. 강한 동사.
+[H-P-I-S-C 슬라이드 구조 — 슬라이드별 카피라이팅 규칙]
 
-[VISUAL RULES — 광고대행하자 Weapon Designer 기준]
-- 각 슬라이드는 시선이 1곳에 집중되어야 함 (F-pattern 금지)
-- 색상은 brand_voice 팔레트 기반, 슬라이드 간 통일성 유지
-- 폰트 계층: 제목(bold 크게) > 부제(medium) > 바디(light 작게) 3단계만
-- 여백은 30% 이상 유지 — 답답한 디자인 금지
-- 감정 톤: hook=긴장감, story=공감, proof=신뢰, menu=흥미, cta=흥분
+1. hook (1장 고정)
+   - headline: ≤15자, 질문/숫자/반전 구조 중 하나. 예: "월 200만 버는 법", "왜 당신만 모를까?"
+   - subtext: 없어도 됨 (선택), 있다면 ≤20자 보조 문구
+   - 목표: 엄지 멈춤 — 0.3초 안에 클릭 욕구 유발
 
-[OUTPUT]
-반드시 아래 JSON 배열만 반환한다. 다른 텍스트 없음. 정확히 5개 요소.
+2. problem (1장 고정)
+   - headline: ≤22자, 공감형 페인포인트. 예: "나만 이렇게 힘든 걸까?"
+   - subtext: 2-3개 페인포인트를 줄바꿈(\n)으로 구분, 각 ≤35자.
+     예: "SNS 해야 하는데 시간이 없다\n뭘 올려야 할지 모르겠다\n올려도 반응이 없다"
+   - 목표: "맞아 나 얘기네" 공감 유도
+
+3~N. insight (2-5장, 콘텐츠 깊이에 따라)
+   - headline: ≤20자, 명확한 인사이트 선언. 예: "구체성이 바이럴을 만든다"
+   - subtext: 근거/데이터/사례 ≤80자. 반드시 구체적 수치 또는 사례 포함.
+     예: "팔로워 1000명 계정이 팔로워 10만 계정보다 저장율 3배 높은 이유는 타깃 집중"
+   - 감정 톤: insight마다 흥미→신뢰→흥분으로 단계적 상승
+   - 목표: 정보밀도 높여 체류시간 확보
+
+N+1. save (1장 고정)
+   - headline: ≤25자, "이걸 저장하면 [구체적 혜택]" 구조. 예: "저장하면 다음에 써먹을 수 있어요"
+   - subtext: ≤50자, 저장 이유를 강화하는 문구
+   - 목표: FOMO 심리 — 저장율 극대화 (인스타 최고 가중치 신호)
+
+N+2. cta (1장 고정)
+   - headline: 강한 동사 단일 행동. "팔로우" / "저장" / "DM 주세요" 중 하나 + 이유 ≤20자
+   - subtext: 브랜드 핸들 또는 추가 유도 문구 ≤30자
+   - 목표: 구체적 행동 1가지만 유도
+
+[VISUAL RULES]
+- hook: 전면 임팩트, 다크 배경, 최소 요소
+- problem: 따뜻한 톤, 공감 레이아웃, 세로 리스트
+- insight: 숫자/데이터 시각 앵커, 정보 밀도 높게
+- save: 브랜드 accent 색 반전 배경, 저장 아이콘 느낌
+- cta: 그라디언트 또는 강렬한 행동 유도 레이아웃
+
+[STRICT OUTPUT FORMAT]
+반드시 JSON 배열만 반환. 다른 텍스트 절대 금지. 5~9개 요소.
 [
   {
     "slide": 1,
     "role": "hook",
-    "headline": "메인 텍스트 (15자 이내, 임팩트 극대화)",
-    "subtext": "서브 텍스트 (30자 이내, 선택)",
-    "visual_direction": "Canva 디자이너에게 전달할 구체적 비주얼 지시 (배경색, 레이아웃, 이미지 키워드)",
-    "emotion_tone": "긴장감|공감|신뢰|흥미|흥분 중 하나",
-    "text_content": "슬라이드 전체 텍스트 (headline + subtext 합산)"
+    "headline": "15자 이내 임팩트 훅",
+    "subtext": "선택적 보조 문구",
+    "visual_direction": "dark bg, center-aligned single text, high contrast",
+    "emotion_tone": "긴장감",
+    "text_content": "headline + subtext 합산 텍스트"
   },
-  ... (총 5개)
+  {
+    "slide": 2,
+    "role": "problem",
+    "headline": "22자 이내 공감형 페인포인트",
+    "subtext": "페인포인트1\n페인포인트2\n페인포인트3",
+    "visual_direction": "warm dark bg, left-aligned, vertical list with accent border",
+    "emotion_tone": "공감",
+    "text_content": "headline + subtext 합산"
+  },
+  {
+    "slide": 3,
+    "role": "insight",
+    "headline": "20자 이내 인사이트 선언",
+    "subtext": "구체적 수치나 사례 포함 근거 ≤80자",
+    "visual_direction": "dark bg, number anchor top-left, data callout box",
+    "emotion_tone": "흥미",
+    "text_content": "headline + subtext 합산"
+  },
+  {
+    "slide": 4,
+    "role": "save",
+    "headline": "저장하면 얻는 구체적 혜택 ≤25자",
+    "subtext": "저장 강화 문구 ≤50자",
+    "visual_direction": "accent color bg (high contrast flip), bookmark icon",
+    "emotion_tone": "신뢰",
+    "text_content": "headline + subtext 합산"
+  },
+  {
+    "slide": 5,
+    "role": "cta",
+    "headline": "단일 강한 동사 행동 유도",
+    "subtext": "브랜드 핸들 또는 추가 유도",
+    "visual_direction": "dark bg, brand handle large, bookmark button",
+    "emotion_tone": "흥분",
+    "text_content": "headline + subtext 합산"
+  }
 ]"""
 
 
@@ -201,11 +273,60 @@ def _parse_json_response(raw: str) -> list:
         raise ValueError(f"JSON 배열 없음\n원본(100자): {text[:100]}")
 
 
+def _check_semantic_duplicate(
+    client_id: str,
+    hook: str,
+    caption: str,
+    similarity_threshold: float = 0.85,
+) -> bool:
+    """훅 + 캡션을 결합해 임베딩 생성 후 pgvector로 의미적 중복 검사.
+
+    Args:
+        client_id: 클라이언트 UUID
+        hook: 훅 텍스트
+        caption: 캡션 텍스트 (필요시 요약)
+        similarity_threshold: 중복으로 간주할 코사인 유사도 임계값
+
+    Returns:
+        True = 중복 발견 (INSERT 스킵), False = 중복 없음 (진행)
+    """
+    if not hook and not caption:
+        return False
+
+    # 훅 + 캡션 조합 텍스트 (요약: 캡션이 너무 길면 앞부분만 사용)
+    combined = f"{hook} {caption[:200]}".strip()
+
+    try:
+        # 로컬 임베딩 생성 (비동기 아님 — sentence-transformers 동기)
+        query_vec = embed(combined)
+
+        # pgvector RPC 호출 (Supabase REST API)
+        import httpx
+        url = f"{db._base}/rpc/match_content_ideas"
+        payload = {
+            "query_embedding": query_vec,
+            "similarity_threshold": similarity_threshold,
+            "match_count": 5,  # 상위 5개만 확인
+        }
+        resp = db._http.post(url, json=payload)
+        resp.raise_for_status()
+        matches = resp.json()
+
+        # 매칭 결과: 1개 이상의 중복 발견 → True
+        return len(matches) > 0
+
+    except Exception as e:
+        # embedding 또는 RPC 실패: 에러 로깅 후 중복 검사 스킵 (insert 진행)
+        print(f"[WARNING] semantic dedup 실패 ({client_id}): {type(e).__name__}: {str(e)[:100]}")
+        return False
+
+
 def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
-    """approved 아이디어 → 5-슬라이드 카드뉴스 스크립트 생성.
+    """approved 아이디어 → H-P-I-S-C 유동 슬라이드 스크립트 생성 (5-9장).
 
     instagram-viral Agent 3-B (Caption Architect) + 3-C (Visual Concept Guide) 로직 통합.
-    Returns 5-element list, each with: slide, role, headline, subtext, visual_direction, emotion_tone, text_content
+    Returns 5-9 element list with H-P-I-S-C roles: hook, problem, insight (2-5 slides), save, cta
+    Each slide contains: slide, role, headline, subtext, visual_direction, emotion_tone, text_content
     """
     hook = idea.get("hook", "")
     caption = idea.get("caption", "")
@@ -230,7 +351,7 @@ def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
 브랜드 톤: {tone}
 색상 팔레트: {palette_text}
 
-위 정보를 기반으로 5-슬라이드 카드뉴스 스크립트를 JSON으로 생성하라."""
+위 정보를 기반으로 5-9개 슬라이드 카드뉴스 스크립트를 JSON으로 생성하라."""
 
     response = _client.messages.create(
         model=_MODEL,
@@ -240,8 +361,8 @@ def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
     )
     raw = response.content[0].text.strip()
     slides = _parse_json_response(raw)
-    if not isinstance(slides, list) or len(slides) != 5:
-        raise ValueError(f"슬라이드 5개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
+    if not isinstance(slides, list) or not (5 <= len(slides) <= 9):
+        raise ValueError(f"슬라이드 5-9개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
     return slides
 
 
@@ -264,6 +385,16 @@ def generate(
     client = rows[0]
     client_id: str = client["id"]
     brand_voice: dict = client.get("brand_voice", {})
+
+    # 최근 30일 훅 조회 (rolling cooldown)
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    recent_ideas = db.select("content_ideas", filters={"client_id": client_id}, limit=100)
+    recent_hooks = [
+        i.get("hook", "")[:60]
+        for i in recent_ideas
+        if i.get("created_at", "") >= cutoff and i.get("hook")
+    ]
 
     # agent_runs 시작
     run_row = db.insert("agent_runs", {
@@ -291,6 +422,8 @@ def generate(
         strategy_hint += f"\n\n[브랜드 해시태그 세트 (필수 포함)]\n  {' '.join(flat_tags[:15])}"
     if positioning:
         strategy_hint += f"\n\n[포지셔닝 — 이 정체성에 맞게 작성]\n  {positioning}"
+    if recent_hooks:
+        strategy_hint += f"\n\n[최근 30일 사용된 훅 (중복 주제·각도 절대 금지)]\n" + "\n".join(f"  ✗ {h}" for h in recent_hooks[:20])
 
     # 유저 메시지 (동적 런타임 데이터)
     weekly_brief = brand_voice.get("weekly_brief", "")
@@ -300,6 +433,15 @@ def generate(
         topic_line = f"이번 주 클라이언트 브리프 (반드시 이 주제 중심으로 작성): {weekly_brief}"
     else:
         topic_line = "주제: 계절·최신 트렌드 기반으로 자유롭게 선정"
+
+    # 피드백 학습 요약 주입 (최신 1건만, 토큰 최소화)
+    feedback_hint = ""
+    try:
+        fb_rows = db.select("feedback_summaries", filters={"client_id": client_id}, limit=1)
+        if fb_rows:
+            feedback_hint = f"\n\n[피드백 학습 인사이트 — 반드시 참고]\n{fb_rows[0]['summary']}"
+    except Exception:
+        pass
 
     # 성과 기반 전략 힌트 (reporter에서 전달된 top_performing 데이터)
     performance_hint = ""
@@ -322,7 +464,7 @@ def generate(
 
     user_message = f"""클라이언트: {client['name']} ({client['industry']})
 브랜드 보이스 (핵심):
-{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{performance_hint}
+{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{feedback_hint}{performance_hint}
 
 {topic_line}
 생성 개수: {actual_count}개{"  (A/B 변주 모드: 정보형 A + 감성형 B)" if ab_variant else ""}"""
@@ -349,26 +491,48 @@ def generate(
         import uuid as _uuid
         ab_group_id = str(_uuid.uuid4()) if ab_variant else None
 
-        # content_ideas INSERT
+        # content_ideas INSERT (의미적 중복 검사 포함)
         saved_ids = []
         for idea in ideas:
+            hook = idea.get("hook", "")
+            caption = idea.get("caption", "")
+
+            # 의미적 중복 검사 (semantic deduplication)
+            if _check_semantic_duplicate(client_id, hook, caption):
+                print(f"[SKIP] 의미적 중복 감지: {hook[:50]}...")
+                continue
+
+            # 임베딩 생성 (content_embedding 저장)
+            combined_text = f"{hook} {caption[:200]}".strip()
+            try:
+                content_embedding = embed(combined_text)
+            except Exception as e:
+                # 임베딩 생성 실패 시: 로깅 후 None으로 진행 (INSERT 스킵 안함)
+                print(f"[WARNING] embedding 생성 실패: {type(e).__name__}: {str(e)[:100]}")
+                content_embedding = None
+
             insert_data = {
                 "client_id": client_id,
                 "content_type": idea.get("content_type", "reel"),
-                "hook": idea.get("hook", ""),
-                "caption": idea.get("caption", ""),
+                "hook": hook,
+                "caption": caption,
                 "hashtags": idea.get("hashtags", []),
                 "script_outline": idea.get("script_outline", {}),
                 "visual_direction": idea.get("visual_direction"),
                 "trend_reference": idea.get("trend_reference"),
+                "key_points": idea.get("key_points") or [],
                 "confidence_score": idea.get("confidence_score"),
                 "confidence_reason": idea.get("confidence_reason"),
+                "hook_formula": idea.get("hook_formula"),
+                "content_embedding": content_embedding,  # pgvector 임베딩
                 "status": "pending",
             }
             if ab_variant and ab_group_id:
                 insert_data["ab_group"] = ab_group_id
                 insert_data["variant"] = idea.get("variant")
+                insert_data["variant_style"] = idea.get("variant_style")  # "정보형 — 수치·사실·리스트" 또는 "감성형 — 공감·스토리·감정"
             row = db.insert("content_ideas", insert_data)
+            idea["id"] = row.get("id")  # orchestrator auto-approve에서 사용
             saved_ids.append(row.get("id"))
 
         duration = time.time() - started
@@ -382,7 +546,6 @@ def generate(
             "output_tokens": usage.output_tokens,
             "cost_usd": cost,
             "ended_at": datetime.now(timezone.utc).isoformat(),
-            "duration_seconds": round(duration, 2),
         })
 
         print(f"[OK] [{client['name']}] content {len(ideas)} saved")

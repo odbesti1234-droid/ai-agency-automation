@@ -29,37 +29,32 @@ load_dotenv()
 _MODEL = "claude-haiku-4-5-20251001"
 _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-# 업종별 검색 키워드 매핑
+# 업종별 검색 키워드 — 가장 신호가 강한 2개만 (토큰 절약)
 _INDUSTRY_KEYWORDS: dict[str, list[str]] = {
     "f-and-b": [
-        "인스타그램 음식 트렌드",
-        "요식업 SNS 마케팅 트렌드",
-        "해산물 레스토랑 바이럴",
-        "다이닝 릴스 트렌드",
+        "요식업 인스타그램 바이럴 트렌드 2025",
+        "해산물 맛집 SNS 릴스 트렌드",
     ],
     "real-estate": [
-        "부동산 인스타그램 트렌드",
-        "공인중개사 SNS 마케팅",
-        "분당 타운하우스 트렌드",
-        "부동산 릴스 콘텐츠",
+        "공인중개사 인스타그램 콘텐츠 트렌드 2025",
+        "부동산 SNS 바이럴 릴스",
     ],
     "fitness": [
-        "헬스 인스타그램 트렌드",
-        "운동 릴스 바이럴",
-        "피트니스 SNS 마케팅",
+        "헬스 피트니스 인스타그램 트렌드 2025",
+        "운동 릴스 바이럴 콘텐츠",
     ],
     "beauty": [
-        "뷰티 인스타그램 트렌드",
-        "코스메틱 릴스",
-        "뷰티 브랜드 SNS",
+        "뷰티 인스타그램 트렌드 2025",
+        "코스메틱 릴스 바이럴",
     ],
 }
 
 _DEFAULT_KEYWORDS = [
-    "인스타그램 마케팅 트렌드",
-    "SNS 바이럴 콘텐츠 트렌드",
-    "릴스 트렌드",
+    "인스타그램 SNS 마케팅 트렌드 2025",
+    "릴스 바이럴 콘텐츠 트렌드",
 ]
+
+_CACHE_HOURS = 24  # 하루 1회만 실행 (API 절약)
 
 _SYSTEM = """너는 소셜미디어 트렌드 분석가다.
 주어진 업종의 인스타그램/SNS 트렌드를 웹 검색으로 조사하고
@@ -122,14 +117,29 @@ def _parse_snapshot(raw_text: str, industry: str) -> dict:
     return fallback
 
 
-def scan(client_slug: str) -> dict:
-    """트렌드 스캔 후 trend_snapshots 테이블에 저장. 반환: snapshot dict."""
+def scan(client_slug: str, force: bool = False) -> dict:
+    """트렌드 스캔 후 trend_snapshots 테이블에 저장. 반환: snapshot dict.
+
+    force=False(기본): 최근 {_CACHE_HOURS}시간 이내 스냅샷이 있으면 캐시 반환 (API 절약).
+    """
     rows = db.select("clients", filters={"slug": client_slug})
     if not rows:
         raise ValueError(f"클라이언트 없음: {client_slug}")
     client = rows[0]
     client_id: str = client["id"]
     industry: str = client.get("industry", "")
+
+    # 캐시 체크 — 오늘 이미 스캔했으면 재사용
+    if not force:
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=_CACHE_HOURS)).isoformat()
+        recent = db.select("trend_snapshots", filters={"client_id": client_id}, limit=1)
+        if recent:
+            created = recent[0].get("created_at", "")
+            if created and created >= cutoff:
+                cached = recent[0].get("trends", {})
+                print(f"[{client['name']}] 트렌드 캐시 사용 (최근 {_CACHE_HOURS}h 이내)")
+                return {**cached, "snapshot_id": recent[0].get("id"), "client_id": client_id, "cached": True}
 
     run_row = db.insert("agent_runs", {
         "client_id": client_id,
@@ -169,16 +179,33 @@ def scan(client_slug: str) -> dict:
 
     started = time.time()
     try:
-        response = _client.messages.create(
+        # Pass 1 — 웹검색 1회만, 핵심 bullet 요약 (max_tokens 낮게 → 검색 결과 context 비용만 발생)
+        search_prompt = f"업종: {industry} | 키워드: {keywords[0]}\n최신 SNS 트렌드 5가지를 bullet로 한 줄씩만 나열해라. 부연 설명 없이."
+        pass1 = _client.messages.create(
             model=_MODEL,
-            max_tokens=2048,
+            max_tokens=400,
+            system="너는 SNS 트렌드 검색 도우미다. 웹 검색 후 결과를 bullet list 5줄로만 요약해라.",
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 1}],
+            messages=[{"role": "user", "content": search_prompt}],
+        )
+
+        search_summary = ""
+        for block in pass1.content:
+            if hasattr(block, "text") and block.text.strip():
+                search_summary = block.text.strip()
+                break
+
+        # Pass 2 — 검색 결과 없이 요약만 입력, JSON 생성 (context 극소)
+        compact_msg = f"업종: {industry}\n클라이언트: {client['name']}\n오늘 날짜: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}{pillar_hint}{audience_hint}\n\n검색 요약:\n{search_summary or '데이터 없음'}\n\nJSON으로 정리해줘."
+        pass2 = _client.messages.create(
+            model=_MODEL,
+            max_tokens=1024,
             system=_SYSTEM,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=[{"role": "user", "content": user_message}],
+            messages=[{"role": "user", "content": compact_msg}],
         )
 
         raw_text = ""
-        for block in response.content:
+        for block in pass2.content:
             if hasattr(block, "text") and block.text.strip():
                 raw_text = block.text.strip()
                 break
@@ -193,17 +220,19 @@ def scan(client_slug: str) -> dict:
         snapshot_id: str = snapshot_row.get("id", "?")
 
         duration = time.time() - started
-        usage = response.usage
-        cost = (usage.input_tokens * 0.8 + usage.output_tokens * 4) / 1_000_000
+        total_input = pass1.usage.input_tokens + pass2.usage.input_tokens
+        total_output = pass1.usage.output_tokens + pass2.usage.output_tokens
+        cost = (total_input * 0.8 + total_output * 4) / 1_000_000
+
+        print(f"  토큰: pass1={pass1.usage.input_tokens}in/{pass1.usage.output_tokens}out | pass2={pass2.usage.input_tokens}in/{pass2.usage.output_tokens}out | 합계={total_input}in")
 
         db.update("agent_runs", filters={"id": run_id}, patch={
             "status": "completed",
             "output": {"snapshot_id": snapshot_id, "topics_count": len(snapshot_data.get("trending_topics", []))},
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
+            "input_tokens": total_input,
+            "output_tokens": total_output,
             "cost_usd": cost,
             "ended_at": datetime.now(timezone.utc).isoformat(),
-            "duration_seconds": round(duration, 2),
         })
 
         print(f"[{client['name']}] 트렌드 스캔 완료 (snapshot_id={snapshot_id})")

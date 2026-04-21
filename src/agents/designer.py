@@ -63,7 +63,6 @@ def _log_agent_run(
         "output": output_data or {},
         "started_at": (started_at or now).isoformat(),
         "ended_at": now.isoformat(),
-        "duration_seconds": round(duration or 0, 2),
     }
     if error_msg:
         row["error_message"] = error_msg

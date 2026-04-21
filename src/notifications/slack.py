@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from src.api.approve import make_approve_url, make_brief_url
+from src.api.approve import make_approve_url, make_brief_url, make_feedback_url
 
 
 def send(
@@ -132,23 +132,23 @@ def notify_design_ready(
             "text": {"type": "mrkdwn", "text": text_body},
         })
 
-        # 실제 이미지 블록 (Supabase Storage public URL인 경우)
-        _clean = design_url.split("?")[0] if design_url else ""
-        is_image_url = (
-            design_url
-            and design_url.startswith("https://")
-            and "supabase" in design_url
-            and _clean.endswith(".png")
-        )
-        if is_image_url:
-            blocks.append({
-                "type": "image",
-                "image_url": design_url,
-                "alt_text": f"{client_name} 카드뉴스 {i}",
-            })
-        elif design_url and design_url.startswith("https://"):
-            # Canva URL 등 외부 링크
-            blocks[-1]["text"]["text"] += f"\n<{design_url}|🎨 디자인 미리보기>"
+        # carousel_urls 전체 슬라이드 이미지 블록 (없으면 design_url 단독)
+        carousel_urls: list = idea.get("carousel_urls") or []
+        if not carousel_urls and design_url:
+            carousel_urls = [design_url]
+
+        slide_labels = ["hook", "problem", "insight1", "insight2", "insight3", "save", "cta"]
+        for j, url in enumerate(carousel_urls):
+            _clean = url.split("?")[0]
+            if url.startswith("https://") and "supabase" in url and _clean.endswith(".png"):
+                label = slide_labels[j] if j < len(slide_labels) else f"slide{j+1}"
+                blocks.append({
+                    "type": "image",
+                    "image_url": url,
+                    "alt_text": f"{client_name} 카드뉴스 {i} [{label}]",
+                })
+            elif url.startswith("https://"):
+                blocks[-1]["text"]["text"] += f"\n<{url}|🎨 슬라이드 {j+1}>"
 
         # 승인/거부 버튼
         if idea_id:
@@ -399,6 +399,26 @@ def notify_published(
                 "type": "image",
                 "image_url": design_url,
                 "alt_text": f"{client_name} 게시 카드뉴스 {i}",
+            })
+
+        idea_id = idea.get("id", "")
+        if idea_id:
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "👍 잘됐어요"},
+                        "style": "primary",
+                        "url": make_feedback_url(idea_id, "good"),
+                    },
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "👎 별로예요"},
+                        "style": "danger",
+                        "url": make_feedback_url(idea_id, "bad"),
+                    },
+                ],
             })
 
         blocks.append({"type": "divider"})
