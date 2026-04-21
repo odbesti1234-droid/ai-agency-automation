@@ -38,6 +38,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import httpx
+
 from src.db.client import SupabaseClient
 from src.notifications.slack import notify_design_ready
 from src.utils.storage import upload_png
@@ -70,6 +72,130 @@ def _e(text: str) -> str:
     return _html_escape.escape(str(text or ""))
 
 
+def _create_notion_brief(idea: dict, client_name: str) -> str | None:
+    """카드뉴스 콘텐츠 아이디어를 Notion 페이지로 저장 → 공개 URL 반환."""
+    token = os.environ.get("NOTION_TOKEN", "")
+    parent_id = os.environ.get("NOTION_PARENT_PAGE_ID", "")
+    if not token or not parent_id or "XXXX" in token:
+        print("[card_designer] NOTION_TOKEN 미설정 — Notion 생성 건너뜀")
+        return None
+
+    hook = idea.get("hook", "")
+    caption = idea.get("caption", "")
+    hashtags = idea.get("hashtags", [])
+    slide_script = idea.get("slide_script") or []
+    key_points = idea.get("key_points") or []
+    carousel_urls = idea.get("carousel_urls") or []
+    content_type = idea.get("content_type", "")
+    idea_id = idea.get("id", "")[:8]
+
+    title = f"[{client_name}] {hook[:50]}"
+
+    children: list[dict] = []
+
+    def _para(text: str, bold: bool = False) -> dict:
+        rich = {"type": "text", "text": {"content": text}}
+        if bold:
+            rich["annotations"] = {"bold": True}
+        return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [rich]}}
+
+    def _h2(text: str) -> dict:
+        return {"object": "block", "type": "heading_2", "heading_2": {
+            "rich_text": [{"type": "text", "text": {"content": text}}]
+        }}
+
+    def _bullet(text: str) -> dict:
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {
+            "rich_text": [{"type": "text", "text": {"content": text}}]
+        }}
+
+    def _divider() -> dict:
+        return {"object": "block", "type": "divider", "divider": {}}
+
+    children.append({"object": "block", "type": "callout", "callout": {
+        "rich_text": [{"type": "text", "text": {"content": f"{client_name} 카드뉴스 브리프 — {content_type.upper()} | ID: {idea_id}"}}],
+        "icon": {"emoji": "🃏"},
+        "color": "blue_background",
+    }})
+
+    # 훅
+    children.append(_h2("📌 훅 (커버 슬라이드)"))
+    children.append(_para(hook, bold=True))
+    children.append(_divider())
+
+    # 슬라이드 구성
+    if slide_script:
+        children.append(_h2("🎬 슬라이드 스크립트"))
+        for slide in slide_script:
+            role = slide.get("role", "")
+            headline = slide.get("headline", "") or slide.get("text", "") or slide.get("body", "")
+            body = slide.get("body", "") if slide.get("headline") else ""
+            label = f"[{role.upper()}] {headline[:150]}"
+            if body:
+                label += f"\n   └ {body[:150]}"
+            children.append(_bullet(label))
+        children.append(_divider())
+    elif key_points:
+        children.append(_h2("💡 핵심 포인트"))
+        for kp in key_points:
+            children.append(_bullet(str(kp)[:200]))
+        children.append(_divider())
+
+    # 캡션
+    if caption:
+        children.append(_h2("📝 인스타그램 캡션"))
+        # 2000자 한도 처리 — 단락별 분리
+        cap_parts = [caption[i:i+1900] for i in range(0, min(len(caption), 5700), 1900)]
+        for part in cap_parts:
+            children.append(_para(part))
+        children.append(_divider())
+
+    # 해시태그
+    if hashtags:
+        children.append(_h2("🏷️ 해시태그"))
+        children.append(_para(" ".join(f"#{t}" for t in hashtags[:30])))
+        children.append(_divider())
+
+    # 카드뉴스 이미지 URL
+    if carousel_urls:
+        children.append(_h2("🖼️ 카드뉴스 이미지"))
+        labels = ["커버", "포인트1", "포인트2", "포인트3", "포인트4", "포인트5", "CTA"]
+        for i, url in enumerate(carousel_urls):
+            label = labels[i] if i < len(labels) else f"슬라이드{i+1}"
+            children.append({"object": "block", "type": "image", "image": {
+                "type": "external", "external": {"url": url}
+            }})
+            children.append(_bullet(f"[{label}] {url}"))
+
+    payload = {
+        "parent": {"page_id": parent_id},
+        "properties": {"title": {"title": [{"type": "text", "text": {"content": title}}]}},
+        "children": children[:100],
+    }
+
+    try:
+        resp = httpx.post(
+            "https://api.notion.com/v1/pages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        if resp.status_code not in (200, 201):
+            print(f"[card_designer] Notion 페이지 생성 실패: {resp.status_code} {resp.text[:200]}")
+            return None
+        page_id = resp.json().get("id", "").replace("-", "")
+        url = f"https://www.notion.so/{page_id}" if page_id else None
+        print(f"[card_designer] Notion 페이지 생성 완료 → {url}")
+        return url
+    except Exception as e:
+        print(f"[card_designer] Notion 오류: {e}")
+        return None
+
+
 def _split_hook(hook: str, max_chars: int = 16) -> list[str]:
     if len(hook) <= max_chars:
         return [hook]
@@ -93,10 +219,16 @@ def _strip_prefix(line: str) -> str:
     while i < len(line):
         ch = line[i]
         cat = _ud.category(ch)
-        if cat.startswith("L") or cat.startswith("N") and i > 0:
+        if cat.startswith("L") or "\uAC00" <= ch <= "\uD7A3" or "\u3131" <= ch <= "\u3163":
             result = line[i:].strip()
             break
-        if "\uAC00" <= ch <= "\uD7A3" or "\u3131" <= ch <= "\u3163":
+        if cat.startswith("N"):
+            j = i
+            while j < len(line) and _ud.category(line[j]).startswith("N"):
+                j += 1
+            if j < len(line) and line[j] in ".\u3002)\uff09 \t":
+                i = j
+                continue
             result = line[i:].strip()
             break
         i += 1
@@ -117,7 +249,7 @@ def _parse_bullets(caption: str, max_items: int = 7) -> list[str]:
         return len(_strip_prefix(line)) < 10
 
     _BULLET_START = _re.compile(
-        r"^[\d①-⑩\-\*•]|[\U0001F51F-\U0001F525]|[❌✅📌🔥💡]",
+        r"^\d+(?=[.\u3002)\uff09\]\s])|^[①-⑩\-\*•]|[\U0001F51F-\U0001F525]|[❌✅📌🔥💡]",
         _re.UNICODE,
     )
     numbered, others = [], []
@@ -134,6 +266,45 @@ def _parse_bullets(caption: str, max_items: int = 7) -> list[str]:
 
     bullets = numbered[:max_items] or others[:max_items]
     return bullets[:max_items]
+
+
+def _verify_slide_content(hook: str, raw_bullets: list[str], brand_voice: dict) -> list[str]:
+    """Claude Haiku로 슬라이드 핵심 포인트 검증/개선. 실패 시 원본 반환."""
+    if not raw_bullets:
+        return raw_bullets
+    try:
+        import anthropic as _ant
+        import json as _json
+        _ant_client = _ant.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+        tone = brand_voice.get("tone") or ""
+        bullet_text = "\n".join(f"- {b}" for b in raw_bullets)
+        prompt = (
+            f"카드뉴스 슬라이드 핵심 포인트를 검토해주세요.\n\n"
+            f"훅: {hook}\n\n"
+            f"추출된 포인트:\n{bullet_text}\n\n"
+            f"요구사항:\n"
+            f"1. 슬라이드 1장에 맞는 30자 이내 간결한 문장\n"
+            f"2. 훅과 연결되는 구체적 가치 (수치 포함 시 유지)\n"
+            f"3. 4~6개로 조정\n"
+            f"4. 브랜드 톤: {tone or '정보적, 실용적'}\n\n"
+            f'JSON 배열만 반환: ["포인트1", "포인트2", ...]'
+        )
+        resp = _ant_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        s, e = text.find("["), text.rfind("]") + 1
+        if s >= 0 and e > s:
+            result = _json.loads(text[s:e])
+            if isinstance(result, list) and result:
+                cleaned = [str(p).strip()[:100] for p in result if str(p).strip()]
+                print(f"  [content_verifier] {len(raw_bullets)}->{len(cleaned)}개 검증 완료")
+                return cleaned
+    except Exception as exc:
+        print(f"  [content_verifier] 건너뜀(원본 사용): {exc}")
+    return raw_bullets
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -981,6 +1152,7 @@ def generate_carousel_html(
             key_points = [str(p).strip()[:100] for p in raw_kp if str(p).strip()][:7]
         else:
             key_points = _parse_bullets(idea.get("caption") or hook, max_items=7)
+            key_points = _verify_slide_content(hook, key_points, brand_voice)
 
         # CTA 문구 추출
         script = idea.get("script_outline") or {}
@@ -1261,18 +1433,29 @@ def run(client_slug: str) -> dict:
             except Exception as e:
                 print(f"  → Story 생성 실패 (비치명적): {e}")
 
-            db_client.update("content_ideas", filters={"id": idea_id}, patch={
+            # Notion 브리프 페이지 생성 (비치명적)
+            notion_url = None
+            try:
+                notion_url = _create_notion_brief(idea, client_name)
+            except Exception as e:
+                print(f"  → Notion 생성 실패 (비치명적): {e}")
+
+            patch: dict = {
                 "status": "design_ready",
                 "design_url": design_url,
                 "carousel_urls": slide_urls,
                 "story_url": story_url,
-            })
+            }
+            if notion_url:
+                patch["notion_url"] = notion_url
+            db_client.update("content_ideas", filters={"id": idea_id}, patch=patch)
 
             results.append({
                 "idea_id": idea_id,
                 "image_url": design_url,
                 "carousel_urls": slide_urls,
                 "story_url": story_url,
+                "notion_url": notion_url,
                 "slide_count": len(slide_urls),
                 "success": True,
             })
@@ -1297,6 +1480,7 @@ def run(client_slug: str) -> dict:
                     **pending_by_id[r["idea_id"]],
                     "design_url": r["image_url"],
                     "carousel_urls": r.get("carousel_urls", []),
+                    "notion_url": r.get("notion_url"),
                 }
                 for r in success_results
                 if r["idea_id"] in pending_by_id

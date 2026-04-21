@@ -118,8 +118,25 @@ async def approve(
                     )
                 except Exception as notify_err:
                     print(f"[approve] 최종 승인 알림 실패: {notify_err}")
+
+                # 즉시 publisher 실행 (background thread — 30분 cron 대기 없이 바로 게시)
+                import threading  # noqa: PLC0415
+                def _publish_now():
+                    try:
+                        from src.agents.publisher import run as publisher_run  # noqa: PLC0415
+                        client_slug = client_info.get("slug", "") if client_id else ""
+                        if client_slug:
+                            print(f"[approve] 즉시 게시 시작: {client_slug}")
+                            publisher_run(client_slug)
+                        else:
+                            from src.agents.publisher import run_all_active  # noqa: PLC0415
+                            run_all_active()
+                    except Exception as pub_err:
+                        print(f"[approve] 즉시 게시 오류: {pub_err}")
+                threading.Thread(target=_publish_now, daemon=True).start()
+
                 return HTMLResponse(
-                    content=_html_page("디자인 최종 승인", "디자인이 최종 승인되었습니다. 발행 준비 완료!", success=True)
+                    content=_html_page("디자인 최종 승인", "디자인이 최종 승인되었습니다. Instagram 게시 시작!", success=True)
                 )
             else:
                 db.update("content_ideas", filters={"id": idea_id}, patch={"status": "rejected"})
@@ -310,6 +327,35 @@ async def trigger_pipeline(
                 run_single(client)
         except Exception as e:
             print(f"[trigger] 파이프라인 오류: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "client": client}
+
+
+@app.post("/publish")
+async def trigger_publisher(
+    client: str = Query(default="all"),
+    token: str = Query(...),
+) -> dict:
+    """publisher 수동 트리거. final_approved 아이디어를 즉시 Instagram에 게시."""
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+
+    expected = _make_trigger_token(client)
+    if not hmac.compare_digest(expected, token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    import threading
+    from src.agents.publisher import run_all_active as publisher_run_all, run as publisher_run_single
+
+    def _run() -> None:
+        try:
+            if client == "all":
+                publisher_run_all()
+            else:
+                publisher_run_single(client)
+        except Exception as e:
+            print(f"[publish] 오류: {e}")
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started", "client": client}

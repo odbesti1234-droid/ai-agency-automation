@@ -1,6 +1,5 @@
 [build]
-builder = "nixpacks"
-buildCommand = "apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra 2>/dev/null || true && pip install -r requirements.txt && python -m playwright install chromium --with-deps"
+builder = "dockerfile"
 
 [deploy]
 startCommand = "python -m src.scheduler.cron"

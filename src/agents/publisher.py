@@ -298,7 +298,7 @@ def run(client_slug: str) -> dict:
         for idea in ready:
             idea_id: str = idea["id"]
             hook_preview = idea.get("hook", "")[:40]
-            carousel_urls = idea.get("carousel_urls") or []
+            carousel_urls = idea.get("carousel_urls") or idea.get("design_urls") or []
             design_url: str = idea.get("design_url", "")
             print(f"[publisher:{client_slug}] 처리 중 [{idea_id[:8]}] {hook_preview}...")
 

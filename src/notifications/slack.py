@@ -150,6 +150,14 @@ def notify_design_ready(
             elif url.startswith("https://"):
                 blocks[-1]["text"]["text"] += f"\n<{url}|🎨 슬라이드 {j+1}>"
 
+        # Notion 브리프 링크
+        notion_url = idea.get("notion_url")
+        if notion_url:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"📄 *Notion 브리프:* <{notion_url}|콘텐츠 문서 열기>"},
+            })
+
         # 승인/거부 버튼
         if idea_id:
             approve_url = make_approve_url(idea_id, "approved", stage="design")
