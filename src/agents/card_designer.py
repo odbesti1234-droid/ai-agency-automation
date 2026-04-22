@@ -1440,8 +1440,10 @@ def run(client_slug: str) -> dict:
             except Exception as e:
                 print(f"  → Notion 생성 실패 (비치명적): {e}")
 
+            _auto = client_row.get("auto_approve", False)
             patch: dict = {
-                "status": "design_ready",
+                "status": "final_approved" if _auto else "design_ready",
+                "human_approved": bool(_auto),
                 "design_url": design_url,
                 "carousel_urls": slide_urls,
                 "story_url": story_url,

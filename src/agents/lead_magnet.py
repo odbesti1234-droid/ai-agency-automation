@@ -839,6 +839,7 @@ def run(
             f"댓글에 '{keyword}' 남겨주시면 전체 자료 드려요 👇\n\n"
             + " ".join(lm.get("hashtags", []))
         )
+        _auto = client_row.get("auto_approve", False)
         ci_row = db_client.insert("content_ideas", {
             "client_id": client_id,
             "content_type": "feed",
@@ -847,8 +848,8 @@ def run(
             "hashtags": lm.get("hashtags", []),
             "carousel_urls": slide_urls,
             "design_url": cover_url,
-            "status": "design_ready",
-            "human_approved": False,
+            "status": "final_approved" if _auto else "design_ready",
+            "human_approved": bool(_auto),
         })
         content_idea_id = ci_row.get("id")
         print(f"[lead_magnet:{client_slug}] content_ideas 저장 완료 (id={str(content_idea_id)[:8]})")

@@ -42,7 +42,7 @@ def get_pending_clients() -> list[str]:
     """design_urls 없는 approved 아이디어가 있는 클라이언트 slug 목록 반환."""
     db = SupabaseClient()
     try:
-        clients = db.select("clients", limit=50)
+        clients = db.select("clients", filters={"is_active": True}, limit=50)
         result = []
         for client in clients:
             slug = client.get("slug", "")
