@@ -28,6 +28,9 @@ from src.db.client import SupabaseClient
 
 app = FastAPI(title="AI Agency Approval API", docs_url=None, redoc_url=None)
 
+from src.api.kakao_auth import router as kakao_router  # noqa: E402
+app.include_router(kakao_router)
+
 _SECRET = os.environ.get("APPROVAL_SECRET", "")
 _ALLOWED_ACTIONS = {"approved", "rejected"}
 

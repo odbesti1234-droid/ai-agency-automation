@@ -34,6 +34,7 @@ load_dotenv()
 
 from src.db.client import SupabaseClient
 from src.notifications.slack import notify_published, notify_error
+from src.notifications.kakao import notify_published as kakao_notify_published, notify_error as kakao_notify_error
 
 _GRAPH_API_VERSION = "v21.0"
 _GRAPH_BASE = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
@@ -419,6 +420,7 @@ def run(client_slug: str) -> dict:
                 ideas=published_ideas,
                 webhook_url=slack_webhook,
             )
+            kakao_notify_published(client_name=client_name, count=len(published_ideas))
 
         print(f"[publisher:{client_slug}] 완료 — {publish_count}개 게시, {len(errors)}개 실패")
         return {
