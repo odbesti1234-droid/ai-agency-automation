@@ -116,19 +116,14 @@ def send_me(
         return False
 
     template: dict = {
-        "object_type": "feed",
-        "content": {
-            "title":       text[:200],
-            "description": "",
-            "link":        {"web_url": link_url or "", "mobile_web_url": link_url or ""},
-        },
+        "object_type": "text",
+        "text": text[:200],
+        "link": {"web_url": link_url or "https://kakao.com", "mobile_web_url": link_url or "https://kakao.com"},
     }
-    if image_url:
-        template["content"]["image_url"] = image_url
     if link_title and link_url:
         template["buttons"] = [{
-            "title":       link_title,
-            "link":        {"web_url": link_url, "mobile_web_url": link_url},
+            "title": link_title,
+            "link":  {"web_url": link_url, "mobile_web_url": link_url},
         }]
 
     try:
