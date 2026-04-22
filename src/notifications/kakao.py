@@ -132,11 +132,16 @@ def send_me(
         }]
 
     try:
-        import json
+        import json, urllib.parse
         resp = httpx.post(
             f"{_KAPI}/v2/api/talk/memo/default/send",
-            headers={"Authorization": f"Bearer {access_token}"},
-            data={"template_object": json.dumps(template, ensure_ascii=False)},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+            },
+            content=("template_object=" + urllib.parse.quote(
+                json.dumps(template, ensure_ascii=False)
+            )).encode("utf-8"),
             timeout=15,
         )
         if resp.status_code == 200 and resp.json().get("result_code") == 0:
