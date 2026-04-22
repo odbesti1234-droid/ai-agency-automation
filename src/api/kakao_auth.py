@@ -61,14 +61,19 @@ async def kakao_callback(code: str):
     redirect_uri = os.environ.get("KAKAO_REDIRECT_URI", "")
 
     try:
+        client_secret = os.environ.get("KAKAO_CLIENT_SECRET", "")
+        token_data = {
+            "grant_type":   "authorization_code",
+            "client_id":    app_key,
+            "redirect_uri": redirect_uri,
+            "code":         code,
+        }
+        if client_secret:
+            token_data["client_secret"] = client_secret
+
         resp = httpx.post(
             f"{_KAUTH}/oauth/token",
-            data={
-                "grant_type":   "authorization_code",
-                "client_id":    app_key,
-                "redirect_uri": redirect_uri,
-                "code":         code,
-            },
+            data=token_data,
             timeout=15,
         )
         data = resp.json()

@@ -74,13 +74,18 @@ def get_access_token() -> str:
     if not refresh_token:
         raise RuntimeError("카카오 refresh_token 없음 — /kakao/auth 로 최초 인증 필요")
 
+    token_data: dict = {
+        "grant_type":    "refresh_token",
+        "client_id":     app_key,
+        "refresh_token": refresh_token,
+    }
+    client_secret = os.environ.get("KAKAO_CLIENT_SECRET", "")
+    if client_secret:
+        token_data["client_secret"] = client_secret
+
     resp = httpx.post(
         f"{_KAUTH}/oauth/token",
-        data={
-            "grant_type":    "refresh_token",
-            "client_id":     app_key,
-            "refresh_token": refresh_token,
-        },
+        data=token_data,
         timeout=15,
     )
     data = resp.json()
