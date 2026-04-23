@@ -405,8 +405,9 @@ def _clean_cta(raw: str) -> str:
     if quoted:
         text = quoted[0]
     else:
-        # 콜론 뒤 텍스트 사용
-        text = raw.split(":")[-1] if ":" in raw else raw
+        # 연출 지시어 콜론(자막: / 페이드인: 등)만 분리 — "1:1" 같은 비율 표현 보호
+        label_colon = _re.search(r'(자막|페이드인|페이드아웃|인서트|컷|오버레이|내레이션|보이스오버)\s*:', raw)
+        text = raw.split(":", 1)[-1] if label_colon else raw
     # 연출 지시어 패턴 제거
     text = _re.sub(r"(자막|페이드인|페이드아웃|인서트|컷|오버레이|내레이션|보이스오버)[^\S\r\n]*", "", text)
     text = text.strip(" '\".,·—-")
@@ -662,7 +663,21 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
     background: linear-gradient(155deg, {primary} 0%, #2D1810 100%);
     display:flex; flex-direction:column;
     justify-content:center;
-    padding:140px 90px 110px;
+    padding:100px 90px 90px;
+    overflow:hidden;
+  }}
+  /* 전체 캔버스 배경 장식 따옴표 */
+  .bg-quote {{
+    position:absolute; top:-80px; right:20px;
+    font-family:'Playfair Display','Georgia',serif;
+    font-size:700px; font-weight:900;
+    color:{secondary}; opacity:0.04; line-height:1;
+    pointer-events:none; user-select:none;
+  }}
+  /* 상단 감성 라인 */
+  .top-accent {{
+    position:absolute; top:0; left:0; right:0; height:3px;
+    background:linear-gradient(90deg, transparent 0%, {secondary} 50%, transparent 100%);
   }}
   .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
   .role-badge {{
@@ -672,22 +687,29 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
   }}
   .empathy-intro {{
     font-family:'Playfair Display',serif;
-    font-style:italic; font-size:22px; font-weight:400;
-    color:{secondary}; opacity:0.9; margin-bottom:24px;
+    font-style:italic; font-size:24px; font-weight:400;
+    color:{secondary}; opacity:0.9; margin-bottom:20px;
   }}
   .headline {{
     font-family:'Noto Serif KR','Malgun Gothic',serif;
     font-size:{hl_fs}px; font-weight:700;
     color:{on_primary}; line-height:1.4;
-    margin-bottom:36px; max-width:880px;
+    margin-bottom:32px; max-width:880px;
   }}
-  .pain-list {{ display:flex; flex-direction:column; gap:14px; }}
+  .pain-list {{ display:flex; flex-direction:column; gap:16px; }}
   .pain-item {{
-    border-left:3px solid {secondary};
-    padding:15px 22px;
-    background:rgba({rgb_sec},0.09);
-    font-size:23px; font-weight:400; color:{on_primary};
-    opacity:0.82; line-height:1.45; border-radius:0 6px 6px 0;
+    border-left:4px solid {secondary};
+    padding:20px 26px;
+    background:rgba({rgb_sec},0.12);
+    font-size:24px; font-weight:400; color:{on_primary};
+    line-height:1.45; border-radius:0 8px 8px 0;
+  }}
+  .swipe-hint {{
+    margin-top:48px;
+    padding-top:28px;
+    border-top:1px solid rgba({rgb_sec},0.18);
+    font-size:18px; font-weight:300; color:{secondary};
+    opacity:0.65; letter-spacing:3px; text-transform:uppercase;
   }}
   .corner {{ position:absolute; width:24px; height:24px; }}
   .corner.tl {{ top:40px; left:40px; border-top:1.5px solid rgba({rgb},0.35); border-left:1.5px solid rgba({rgb},0.35); }}
@@ -701,6 +723,8 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
   }}
 </style></head>
 <body><div class="wrap">
+  <div class="top-accent"></div>
+  <div class="bg-quote">&#8220;</div>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
   <div class="dots">{dots_html}</div>
@@ -708,6 +732,7 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
   <div class="empathy-intro">혹시 이런 적 있나요?</div>
   <div class="headline">{_e(headline)}</div>
   <div class="pain-list">{bullet_items}</div>
+  <div class="swipe-hint">→ 다음 슬라이드에서 해결합니다</div>
   <div class="footer">{_e(brand_name)}</div>
 </div></body></html>"""
 
@@ -741,7 +766,34 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     background:{primary};
     display:flex; flex-direction:column;
     justify-content:center;
-    padding:140px 90px 110px;
+    padding:100px 90px 90px;
+    overflow:hidden;
+  }}
+  /* 전체 캔버스를 채우는 대형 장식 숫자 — 배경 텍스처 역할 */
+  .bg-num {{
+    position:absolute; top:50%; right:-60px;
+    transform:translateY(-50%);
+    font-family:'Playfair Display',serif;
+    font-style:italic; font-size:680px; font-weight:700;
+    color:{accent}; opacity:0.055; line-height:1;
+    pointer-events:none; user-select:none;
+  }}
+  /* 상단 가로 액센트 바 */
+  .top-bar {{
+    position:absolute; top:0; left:0; right:0; height:4px;
+    background:linear-gradient(90deg, {accent} 0%, transparent 100%);
+  }}
+  /* 좌측 세로 액센트 라인 */
+  .left-bar {{
+    position:absolute; left:0; top:0; bottom:0; width:4px;
+    background:linear-gradient(180deg, {accent} 0%, transparent 100%);
+    opacity:0.3;
+  }}
+  /* 상단 좌측 데이터 레이블 — 빈 공간 채움 */
+  .data-report-label {{
+    position:absolute; top:190px; left:90px;
+    font-size:11px; font-weight:300; color:{accent};
+    letter-spacing:7px; text-transform:uppercase; opacity:0.35;
   }}
   .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
   .corner {{ position:absolute; width:28px; height:28px; }}
@@ -755,7 +807,7 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
   }}
   .insight-num {{
     font-family:'Playfair Display',serif;
-    font-style:italic; font-size:96px; font-weight:700;
+    font-style:italic; font-size:120px; font-weight:700;
     color:{accent}; line-height:0.9;
   }}
   .insight-label {{
@@ -764,25 +816,25 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     padding-bottom:6px;
   }}
   .h-rule {{
-    width:64px; height:2px; background:{accent};
-    margin-bottom:24px; opacity:0.45;
+    width:80px; height:2px; background:{accent};
+    margin-bottom:28px; opacity:0.45;
   }}
   .headline {{
     font-family:'Noto Serif KR','Malgun Gothic',serif;
     font-size:{hl_fs}px; font-weight:700;
     color:{on_primary}; line-height:1.4;
-    margin-bottom:24px; max-width:880px;
+    margin-bottom:28px; max-width:880px;
   }}
   .data-box {{
     border:1px solid rgba({rgb},0.3);
-    padding:20px 26px;
-    background:rgba({rgb},0.07);
+    padding:26px 30px;
+    background:rgba({rgb},0.09);
     border-radius:4px;
-    max-width:840px;
+    max-width:860px;
   }}
   .data-text {{
-    font-size:22px; font-weight:300; color:{on_primary};
-    opacity:0.72; line-height:1.65;
+    font-size:23px; font-weight:300; color:{on_primary};
+    opacity:0.75; line-height:1.7;
   }}
   .footer {{
     position:absolute; bottom:56px; left:80px;
@@ -791,9 +843,13 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
   }}
 </style></head>
 <body><div class="wrap">
+  <div class="top-bar"></div>
+  <div class="left-bar"></div>
+  <div class="bg-num">{num_str}</div>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
   <div class="dots">{dots_html}</div>
+  <div class="data-report-label">&#8212; DATA REPORT &#8212;</div>
   <div class="insight-badge">
     <span class="insight-num">{num_str}</span>
     <span class="insight-label">INSIGHT</span>
