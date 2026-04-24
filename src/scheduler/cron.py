@@ -27,6 +27,7 @@ import schedule
 import uvicorn
 
 from src.agents.orchestrator import run_all_active as _orchestrator_run_all
+from src.notifications.kakao import send_me as kakao_send_me
 from src.agents.feedback_learner import run_all_active as feedback_learner_run_all
 from src.agents.designer import run_all_active as designer_run_all_active
 from src.agents.reporter import run_all_active as reporter_run_all_active
@@ -49,6 +50,10 @@ def daily_job() -> None:
     results = _orchestrator_run_all()
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
+    kakao_send_me(
+        f"[일일리포트] {now.strftime('%m/%d')} KST 09:00\n"
+        f"콘텐츠 생성 {ok}/{len(results)} 클라이언트 완료"
+    )
 
 
 def weekly_report_job() -> None:
@@ -120,14 +125,12 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
-    schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
-    print("[Cron] designer poll — 30분 간격")
     print("[Cron] publisher poll — 30분 간격")
     print("[Cron] onboarding poll — 6시간 간격")
     print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")

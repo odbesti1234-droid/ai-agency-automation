@@ -156,6 +156,12 @@ async def approve(
                     )
                 )
             db.update("content_ideas", filters={"id": idea_id}, patch={"status": action})
+
+            # v3에서 stage=content(pending→approved) 흐름은 사용되지 않음
+            # designer 체인 제거 — lead_magnet이 이미지 생성까지 직접 처리
+            if action == "approved":
+                pass
+
             action_kr = "승인" if action == "approved" else "거부"
             hook = idea.get("hook", "")[:60]
             return HTMLResponse(

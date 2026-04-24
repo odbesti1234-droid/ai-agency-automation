@@ -511,11 +511,18 @@ def render_lm_slide(html: str) -> bytes:
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--memory-pressure-off",
+            ],
         )
         page = browser.new_page(viewport={"width": 1080, "height": 1080})
-        page.set_content(html, wait_until="networkidle")
-        page.wait_for_timeout(800)
+        # networkidle은 Google Fonts CDN 응답 대기 중 무한 블록 가능 → load로 변경
+        page.set_content(html, wait_until="load", timeout=20000)
+        page.wait_for_timeout(1000)
         png = page.screenshot(clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
         browser.close()
     return png
@@ -866,6 +873,7 @@ def run(
             "carousel_urls": slide_urls,
             "content_type": "feed",
             "hashtags": lm.get("hashtags", []),
+            "notion_url": notion_url,
         }
         slack_webhook = client_row.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
         notify_design_ready(
