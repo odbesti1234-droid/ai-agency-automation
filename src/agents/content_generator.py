@@ -28,6 +28,7 @@ from src.utils.embedding import embed
 load_dotenv()
 
 _MODEL = "claude-sonnet-4-6"
+_CRITIC_MODEL = "claude-haiku-4-5"
 _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 # 토큰 단가 (USD/1M) — Sonnet 4.6 기준
@@ -85,7 +86,9 @@ _SYSTEM_STATIC = """[ROLE]
     "visual_direction": "디자이너에게 전달할 비주얼 지시",
     "trend_reference": "어떤 트렌드·시즌을 활용했나",
     "confidence_score": 0.85,
-    "confidence_reason": "왜 이 점수인가"
+    "confidence_reason": "왜 이 점수인가",
+    "bgm_recommendation": "BGM 추천: 장르 + 구체적 분위기 (예: lo-fi hip-hop, BPM 80-90, 차분하고 집중되는 느낌)",
+    "grok_video_prompt": "Grok/Runway AI 영상 생성 프롬프트 (영어, 15초 릴스 기준 구체적 장면 묘사)"
   }
 ]
 
@@ -130,7 +133,9 @@ A/B 테스트를 위해 같은 주제를 서로 다른 감성으로 표현하는
     "visual_direction": "디자이너에게 전달할 비주얼 지시",
     "trend_reference": "어떤 트렌드·시즌을 활용했나",
     "confidence_score": 0.85,
-    "confidence_reason": "왜 이 점수인가"
+    "confidence_reason": "왜 이 점수인가",
+    "bgm_recommendation": "BGM 추천: 장르 + 구체적 분위기 (예: lo-fi hip-hop, BPM 80-90, 차분하고 집중되는 느낌)",
+    "grok_video_prompt": "Grok/Runway AI 영상 생성 프롬프트 (영어, 15초 릴스 기준 구체적 장면 묘사)"
   },
   {
     "variant": "B",
@@ -240,6 +245,46 @@ N+2. cta (1장 고정)
     "text_content": "headline + subtext 합산"
   }
 ]"""
+
+
+_CRITIC_PROMPT = """너는 바이럴 콘텐츠 심사관이다. 아래 기준으로 아이디어를 평가해 JSON만 반환한다.
+
+심사 기준:
+1. hook_score: 훅이 3초 안에 멈추게 하는가? 숫자/구체성/이득 있는가?
+2. save_score: "저장해야겠다" 유발하는가? 리스트형 정보/실용성 있는가?
+3. diff_score: 뻔하지 않은가? 실제 경험/숫자/구체 사례로 차별화되는가?
+4. structure_score: 훅→본문→CTA 흐름이 자연스러운가?
+
+각 점수: "pass" | "warn" | "fail"
+verdict: pass(3개 이상 pass) | warn(fail 없고 warn 있음) | fail(1개라도 fail)
+
+업종별 추가:
+- real-estate/luxury-real-estate: 가격/위치/수익률 구체 숫자 없으면 hook_score=warn
+- ai/tech: "AI 유용합니다" 수준이면 diff_score=fail, 실제 화면/결과/숫자 있으면 pass
+
+반환 형식 (JSON만, 다른 텍스트 없음):
+{"hook_score":"pass|warn|fail","save_score":"pass|warn|fail","diff_score":"pass|warn|fail","structure_score":"pass|warn|fail","verdict":"pass|warn|fail","notes":"한 줄 피드백"}"""
+
+
+def _critic_score(idea: dict, industry: str) -> dict:
+    """바이럴 심사 — Haiku로 4가지 기준 평가. 실패해도 warn으로 폴백."""
+    try:
+        msg = f"업종: {industry}\n훅: {idea.get('hook','')}\n캡션(앞200자): {str(idea.get('caption',''))[:200]}\nkey_points: {idea.get('key_points',[])[:3]}"
+        resp = _client.messages.create(
+            model=_CRITIC_MODEL,
+            max_tokens=200,
+            messages=[
+                {"role": "user", "content": _CRITIC_PROMPT + "\n\n" + msg}
+            ],
+        )
+        raw = resp.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1].lstrip("json").strip()
+        result = json.loads(raw)
+        return result
+    except Exception as e:
+        print(f"[critic] 심사 실패 (폴백 warn): {e}")
+        return {"hook_score": "warn", "save_score": "warn", "diff_score": "warn", "structure_score": "warn", "verdict": "warn", "notes": f"심사 오류: {e}"}
 
 
 def _parse_json_response(raw: str) -> list:
@@ -491,9 +536,29 @@ def generate(
         import uuid as _uuid
         ab_group_id = str(_uuid.uuid4()) if ab_variant else None
 
+        # 바이럴 심사 (04-critic 로직 — Haiku)
+        industry = client.get("industry", "")
+        passing_ideas = []
+        for idea in ideas:
+            critic = _critic_score(idea, industry)
+            idea["critic"] = critic
+            verdict = critic.get("verdict", "warn")
+            if verdict == "fail":
+                print(f"[critic:FAIL] 탈락 — {idea.get('hook','')[:50]} | {critic.get('notes','')}")
+                continue
+            if verdict == "warn":
+                print(f"[critic:WARN] 통과(조건부) — {idea.get('hook','')[:50]} | {critic.get('notes','')}")
+            else:
+                print(f"[critic:PASS] 통과 — {idea.get('hook','')[:50]}")
+            passing_ideas.append(idea)
+
+        if not passing_ideas:
+            print("[critic] 전원 탈락 — 원본 아이디어 전체로 폴백")
+            passing_ideas = ideas
+
         # content_ideas INSERT (의미적 중복 검사 포함)
         saved_ids = []
-        for idea in ideas:
+        for idea in passing_ideas:
             hook = idea.get("hook", "")
             caption = idea.get("caption", "")
 
@@ -524,7 +589,11 @@ def generate(
                 "confidence_score": idea.get("confidence_score"),
                 "confidence_reason": idea.get("confidence_reason"),
                 "hook_formula": idea.get("hook_formula"),
-                "content_embedding": content_embedding,  # pgvector 임베딩
+                "content_embedding": content_embedding,
+                "critic_verdict": idea.get("critic", {}).get("verdict"),
+                "critic_notes": idea.get("critic", {}).get("notes"),
+                "bgm_recommendation": idea.get("bgm_recommendation"),
+                "grok_video_prompt": idea.get("grok_video_prompt"),
                 "status": "pending",
             }
             if ab_variant and ab_group_id:
@@ -548,11 +617,12 @@ def generate(
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
-        print(f"[OK] [{client['name']}] content {len(ideas)} saved")
-        for i, idea in enumerate(ideas):
+        print(f"[OK] [{client['name']}] content {len(passing_ideas)}/{len(ideas)} saved (critic 통과율)")
+        for i, idea in enumerate(passing_ideas):
+            critic = idea.get("critic", {})
             print(f"  [{i+1}] {idea.get('content_type','?')} | {idea.get('hook','')[:50]}...")
-            print(f"       confidence: {idea.get('confidence_score','?')} | {idea.get('confidence_reason','')[:40]}")
-        return ideas
+            print(f"       confidence: {idea.get('confidence_score','?')} | critic: {critic.get('verdict','?')}")
+        return passing_ideas
 
     except Exception as e:
         try:

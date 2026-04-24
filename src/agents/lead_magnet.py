@@ -48,6 +48,7 @@ from src.db.client import SupabaseClient
 from src.notifications.slack import send as slack_send
 from src.utils.brand_assets import pick_brand_photo
 from src.utils.storage import upload_png
+from src.agents.critic import evaluate as critic_evaluate, format_slack_critic
 
 _MODEL = "claude-sonnet-4-6"
 _claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -765,6 +766,55 @@ def run(
     hook = lm.get("hook", topic)
     print(f"[lead_magnet:{client_slug}] 훅: {hook}")
 
+    # ── 바이럴 사전 심사 (critic) ──────────────────────────────
+    industry = brand_voice.get("industry", "")
+    preview_slides = [
+        {"role": "hook", "headline": hook},
+        {"role": "tease", "headline": lm.get("tease_title", "")},
+    ] + [
+        {"role": "preview", "headline": h, "subtext": " / ".join(b[:2])}
+        for h, b in [
+            (lm.get("preview1_heading", ""), lm.get("preview1_bullets", [])),
+            (lm.get("preview2_heading", ""), lm.get("preview2_bullets", [])),
+        ]
+    ] + [{"role": "cta", "headline": f"댓글에 '{keyword}' 남기면 전체 자료 드려요"}]
+
+    critic_result = critic_evaluate(
+        hook=hook,
+        slide_scripts=preview_slides,
+        caption=f"{hook}\n\n댓글에 '{keyword}' 남겨주시면 전체 자료 드려요",
+        brand_voice=brand_voice,
+        industry=industry,
+    )
+    verdict = critic_result.get("verdict", "conditional")
+    critic_total = critic_result.get("total", 0)
+    print(f"[lead_magnet:{client_slug}] 바이럴 심사: {verdict} ({critic_total}/100)")
+
+    # reject → 최대 1회 재생성 시도
+    if verdict == "reject":
+        print(f"[lead_magnet:{client_slug}] ❌ 재기획 시도 (1/1)...")
+        rewrite_direction = critic_result.get("rewrite_direction", "")
+        try:
+            lm = _generate_lm_content(
+                topic,
+                f"{info_raw}\n\n[재기획 방향] {rewrite_direction}",
+                keyword,
+                brand_voice,
+                client_name,
+            )
+            hook = lm.get("hook", topic)
+            critic_result = critic_evaluate(
+                hook=hook,
+                slide_scripts=preview_slides,
+                caption=f"{hook}\n\n댓글에 '{keyword}' 남겨주시면 전체 자료 드려요",
+                brand_voice=brand_voice,
+                industry=industry,
+            )
+            verdict = critic_result.get("verdict", "conditional")
+            print(f"[lead_magnet:{client_slug}] 재심사: {verdict} ({critic_result.get('total', 0)}/100)")
+        except Exception as e:
+            print(f"[lead_magnet:{client_slug}] 재생성 실패 (원본 사용): {e}")
+
     # Notion 페이지 먼저 생성 (CTA 슬라이드에 포함)
     print(f"[lead_magnet:{client_slug}] Notion 페이지 생성 중...")
     notion_url = _create_notion_page(
@@ -863,7 +913,7 @@ def run(
     except Exception as e:
         print(f"[lead_magnet:{client_slug}] content_ideas 저장 실패 (비치명적): {e}")
 
-    # Slack 알림 — 승인 버튼 포함
+    # Slack 알림 — 승인 버튼 + 바이럴 심사 결과 포함
     try:
         from src.notifications.slack import notify_design_ready  # noqa: PLC0415
         idea_for_notify = {
@@ -874,6 +924,8 @@ def run(
             "content_type": "feed",
             "hashtags": lm.get("hashtags", []),
             "notion_url": notion_url,
+            "critic_verdict": critic_result.get("verdict", ""),
+            "critic_total": critic_result.get("total", 0),
         }
         slack_webhook = client_row.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
         notify_design_ready(
@@ -881,6 +933,9 @@ def run(
             ideas=[idea_for_notify],
             webhook_url=slack_webhook,
         )
+        # 바이럴 심사 리포트 별도 전송
+        critic_msg = format_slack_critic(client_name, critic_result, hook)
+        slack_send(critic_msg, webhook_url=slack_webhook)
     except Exception as e:
         print(f"[lead_magnet:{client_slug}] Slack 알림 실패: {e}")
 

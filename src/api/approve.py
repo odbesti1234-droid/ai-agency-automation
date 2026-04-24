@@ -377,6 +377,119 @@ def make_trigger_url(client: str = "all") -> str:
     return f"{base}/trigger?client={client}&token={token}"
 
 
+def _make_admin_token() -> str:
+    return hmac.new(_SECRET.encode(), b"manage:admin", hashlib.sha256).hexdigest()
+
+
+def _verify_admin_token(token: str) -> bool:
+    return hmac.compare_digest(_make_admin_token(), token)
+
+
+@app.get("/clients")
+async def list_clients(token: str = Query(...)) -> dict:
+    """활성/비활성 클라이언트 목록 + 파이프라인 요약."""
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+    if not _verify_admin_token(token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    db = SupabaseClient()
+    try:
+        clients = db.select("clients", filters={})
+        result = []
+        for c in clients:
+            cid = c["id"]
+            slug = c.get("slug", "")
+            ideas = db.select("content_ideas", filters={"client_id": cid})
+            by_status: dict[str, int] = {}
+            for idea in ideas:
+                s = idea.get("status", "unknown")
+                by_status[s] = by_status.get(s, 0) + 1
+            result.append({
+                "slug": slug,
+                "name": c.get("name", ""),
+                "industry": c.get("industry", ""),
+                "is_active": c.get("is_active", False),
+                "auto_approve": c.get("auto_approve", False),
+                "ig_connected": bool(c.get("ig_account_id")),
+                "pipeline": by_status,
+                "total_ideas": len(ideas),
+            })
+        return {"clients": result, "count": len(result)}
+    finally:
+        db.close()
+
+
+@app.post("/client/toggle")
+async def toggle_client(
+    slug: str = Query(...),
+    active: bool = Query(...),
+    token: str = Query(...),
+) -> dict:
+    """클라이언트 is_active 토글. active=true|false"""
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+    if not _verify_admin_token(token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    db = SupabaseClient()
+    try:
+        rows = db.select("clients", filters={"slug": slug})
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"클라이언트 없음: {slug}")
+        client = rows[0]
+        db.update("clients", filters={"id": client["id"]}, patch={"is_active": active})
+        state = "활성화" if active else "비활성화"
+        print(f"[manage] {slug} → is_active={active}")
+        return {"slug": slug, "name": client.get("name", ""), "is_active": active, "message": f"{client.get('name', slug)} {state} 완료"}
+    finally:
+        db.close()
+
+
+@app.get("/pipeline")
+async def pipeline_status(
+    token: str = Query(...),
+    client: str = Query(default="all"),
+) -> dict:
+    """클라이언트별 파이프라인 상태 요약."""
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+    if not _verify_admin_token(token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    db = SupabaseClient()
+    try:
+        if client == "all":
+            active_clients = db.select("clients", filters={"is_active": True})
+        else:
+            active_clients = db.select("clients", filters={"slug": client})
+
+        result = []
+        for c in active_clients:
+            cid = c["id"]
+            ideas = db.select("content_ideas", filters={"client_id": cid})
+            by_status: dict[str, int] = {}
+            for idea in ideas:
+                s = idea.get("status", "unknown")
+                by_status[s] = by_status.get(s, 0) + 1
+            pending_approval = [
+                {"id": i["id"], "hook": (i.get("hook") or "")[:60], "status": i.get("status")}
+                for i in ideas
+                if i.get("status") in ("pending", "design_ready")
+            ]
+            result.append({
+                "slug": c.get("slug", ""),
+                "name": c.get("name", ""),
+                "is_active": c.get("is_active", False),
+                "status_counts": by_status,
+                "pending_approval": pending_approval,
+                "published_count": by_status.get("published", 0),
+            })
+        return {"pipeline": result, "as_of": __import__("datetime").datetime.utcnow().isoformat() + "Z"}
+    finally:
+        db.close()
+
+
 class LeadMagnetRequest(BaseModel):
     client: str
     topic: str

@@ -26,6 +26,7 @@ from src.db.client import db
 from src.agents.trend_scanner import scan as trend_scan
 from src.agents.info_extractor import extract as extract_info, extract_keyword
 from src.agents.lead_magnet import run as lead_magnet_run
+from src.agents.quality_tracker import run as quality_track_run
 from src.notifications.slack import notify_error
 
 
@@ -74,13 +75,24 @@ def run(client_slug: str) -> dict:
         print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 추출 완료")
 
         # Sub-agent 4: 리드마그넷 카드뉴스 생성 → Slack 자동 발송
-        print(f"[{client_name}] [4/4] 리드마그넷 카드뉴스 생성...")
+        print(f"[{client_name}] [4/5] 리드마그넷 카드뉴스 생성...")
         result = lead_magnet_run(
             client_slug=client_slug,
             topic=topic,
             info_raw=info_raw,
             keyword=keyword,
         )
+
+        # Sub-agent 5: 품질 추적 (골드스탠다드 비교 + 어제 대비 성장)
+        print(f"[{client_name}] [5/5] 품질 추적 분석...")
+        try:
+            quality_result = quality_track_run(client_slug=client_slug)
+            quality_score = quality_result.get("score", 0)
+            print(f"[{client_name}] 품질 점수: {quality_score}/100")
+        except Exception as qe:
+            print(f"[{client_name}] 품질 추적 실패 (비치명적): {qe}")
+            quality_result = {}
+            quality_score = 0
 
         db.update("agent_runs", filters={"id": run_id}, patch={
             "status": "completed",
@@ -91,16 +103,24 @@ def run(client_slug: str) -> dict:
                 "lead_magnet_id": result.get("id"),
                 "slide_count": len(result.get("slide_urls", [])),
                 "notion_url": result.get("notion_url"),
+                "quality_score": quality_score,
             },
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
         print(
-            f"[{client_name}] ✅ 완료 — "
+            f"[{client_name}] 완료 — "
             f"슬라이드 {len(result.get('slide_urls', []))}장, "
+            f"품질 {quality_score}/100, "
             f"Notion: {result.get('notion_url', '없음')}"
         )
-        return {"client": client_name, "run_id": run_id, "status": "completed", **result}
+        return {
+            "client": client_name,
+            "run_id": run_id,
+            "status": "completed",
+            "quality_score": quality_score,
+            **result,
+        }
 
     except Exception as e:
         notify_error(client_name, "main_orchestrator", str(e))
