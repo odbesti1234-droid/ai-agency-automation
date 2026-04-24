@@ -33,6 +33,7 @@ from src.agents.designer import run_all_active as designer_run_all_active
 from src.agents.reporter import run_all_active as reporter_run_all_active
 from src.agents.onboarder import run_pending as onboarder_run_pending
 from src.agents.publisher import run_all_active as publisher_run_all_active
+from src.agents.analytics_collector import collect_due as analytics_collect_due
 from src.api.approve import app as api_app
 from src.utils.ig_token import refresh_all_active as ig_token_refresh_all
 
@@ -109,6 +110,15 @@ def publisher_poll_job() -> None:
     print(f"[Cron] publisher_poll 완료 — {published}/{len(results)} 발행")
 
 
+def analytics_poll_job() -> None:
+    """2시간마다 게시 후 48h 경과 포스트 → IG Insights 수집."""
+    now = datetime.now(timezone.utc)
+    print(f"[Cron] analytics_poll 시작 — {now.isoformat()}")
+    results = analytics_collect_due()
+    collected = sum(1 for r in results if r.get("status") == "collected")
+    print(f"[Cron] analytics_poll 완료 — {collected}/{len(results)} 수집")
+
+
 def _start_api_server() -> None:
     port = int(os.environ.get("PORT", "8000"))
     print(f"[API] 승인 서버 시작 — port {port}")
@@ -126,12 +136,14 @@ def main() -> None:
 
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
     schedule.every(30).minutes.do(publisher_poll_job)
+    schedule.every(2).hours.do(analytics_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
     print("[Cron] publisher poll — 30분 간격")
+    print("[Cron] analytics poll — 2시간 간격 (48h 성과 수집)")
     print("[Cron] onboarding poll — 6시간 간격")
     print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")
     print(f"[Cron] IG 토큰 갱신 — 매주 월요일 {token_refresh_utc:02d}:00 UTC (= KST 09:00)")

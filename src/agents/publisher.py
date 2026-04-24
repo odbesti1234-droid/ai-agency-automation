@@ -368,7 +368,10 @@ def run(client_slug: str) -> dict:
                 results.append({"idea_id": idea_id, "ig_post_id": None, "success": False})
                 continue
 
-            published_at = datetime.now(timezone.utc).isoformat()
+            published_at_dt = datetime.now(timezone.utc)
+            published_at = published_at_dt.isoformat()
+            from datetime import timedelta
+            analytics_due_at = (published_at_dt + timedelta(hours=48)).isoformat()
             db_client.update(
                 "content_ideas",
                 filters={"id": idea_id},
@@ -376,6 +379,8 @@ def run(client_slug: str) -> dict:
                     "status": "published",
                     "ig_post_id": ig_post_id,
                     "published_at": published_at,
+                    "analytics_due_at": analytics_due_at,
+                    "analytics_collected": False,
                 },
             )
             published_ideas.append({**idea, "ig_post_id": ig_post_id})
