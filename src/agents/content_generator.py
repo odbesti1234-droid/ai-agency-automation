@@ -56,6 +56,8 @@ _SYSTEM_STATIC = """[ROLE]
 
 [RULES]
 반드시:
+- content_purpose는 4가지 중 하나: 정보형(수치·사실 전달) | 공감형(감정·스토리) | CTA형(행동 유도) | 트렌드형(시의성·챌린지)
+- 이번 생성 {count}개 안에서 정보형·공감형·CTA형이 골고루 분포되도록 선택 (단일 유형 집중 금지)
 - 훅은 80자 이내, hook_formula 공식 구조 준수
 - 해시태그 15~30개 (브랜드 고유 + 업종 + 로컬 + 트렌드)
 - confidence_score 자체 평가 필수 (0.0~1.0)
@@ -72,6 +74,7 @@ _SYSTEM_STATIC = """[ROLE]
 [
   {
     "content_type": "reel | feed | story",
+    "content_purpose": "정보형 | 공감형 | CTA형 | 트렌드형",
     "hook": "첫 3초 시선 강탈 문장 (80자 이내)",
     "hook_formula": "number | reversal | question | reveal | empathy",
     "caption": "본문 (이모지 포함, 2200자 이내)",
@@ -120,7 +123,9 @@ A/B 테스트를 위해 같은 주제를 서로 다른 감성으로 표현하는
     "variant": "A",
     "variant_style": "정보형 — 수치·사실·리스트",
     "content_type": "reel | feed | story",
+    "content_purpose": "정보형 | 공감형 | CTA형 | 트렌드형",
     "hook": "첫 3초 시선 강탈 문장 (80자 이내)",
+    "hook_formula": "number | reversal | question | reveal | empathy",
     "caption": "본문 (이모지 포함, 2200자 이내)",
     "key_points": ["카드 슬라이드에 표시할 핵심 포인트 3~7개, 각 60자 이내, 인사이트 깊이에 따라 개수 유동"],
     "hashtags": ["#tag", ...],
@@ -579,6 +584,7 @@ def generate(
             insert_data = {
                 "client_id": client_id,
                 "content_type": idea.get("content_type", "reel"),
+                "content_purpose": idea.get("content_purpose"),
                 "hook": hook,
                 "caption": caption,
                 "hashtags": idea.get("hashtags", []),
