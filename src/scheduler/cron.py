@@ -135,6 +135,7 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
+    schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(2).hours.do(analytics_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
@@ -142,6 +143,7 @@ def main() -> None:
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
+    print("[Cron] designer poll — 30분 간격 (approved → design_ready 자동 체인)")
     print("[Cron] publisher poll — 30분 간격")
     print("[Cron] analytics poll — 2시간 간격 (48h 성과 수집)")
     print("[Cron] onboarding poll — 6시간 간격")
