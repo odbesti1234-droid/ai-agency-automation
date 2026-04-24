@@ -539,12 +539,26 @@ def _generate_lm_content(
     keyword: str,
     brand_voice: dict,
     client_name: str,
+    content_purpose: str = "정보형",
 ) -> dict:
     """Claude로 리드마그넷 슬라이드 스크립트 + Notion 문서 본문 생성."""
     brand_json = json.dumps(brand_voice, ensure_ascii=False)[:800]
     niche = brand_voice.get("niche", "") or brand_voice.get("tone", "") or client_name
     tone = brand_voice.get("tone", "친근한")
+
+    _purpose_guide = {
+        "정보형": "수치·사실·체크리스트 중심. 독자가 저장하고 나중에 참고하게 만드는 구체적 정보 전달.",
+        "공감형": "감정·스토리·페인포인트 중심. 독자가 '나 얘기다' 하며 공유하게 만드는 공감 유도.",
+        "CTA형": "댓글 키워드 행동 유도 최우선. 훅과 본문 전체가 '지금 댓글 남기세요'로 수렴.",
+        "트렌드형": "최신 이슈·시즌·챌린지 연결. 지금 이 순간 올려야 하는 이유가 명확한 시의성.",
+    }
+    purpose_hint = _purpose_guide.get(content_purpose, "")
+
     prompt = f"""너는 {niche} 분야 인스타그램 인플루언서야. 팔로워한테 {topic}에 대해 진짜 쓸모있는 자료를 공유하려고 해.
+
+[콘텐츠 목적: {content_purpose}]
+{purpose_hint}
+이번 콘텐츠는 반드시 이 목적에 맞게 훅·구조·CTA를 설계한다.
 
 ⚠️ 절대 쓰면 안 되는 표현 (AI 티 나는 말투):
 - "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
@@ -737,6 +751,7 @@ def run(
     topic: str,
     info_raw: str,
     keyword: str,
+    content_purpose: str = "정보형",
 ) -> dict:
     """리드마그넷 전체 파이프라인 실행."""
     t0 = time.time()
@@ -757,9 +772,9 @@ def run(
     print(f"[lead_magnet:{client_slug}] 키워드: '{keyword}'")
 
     # Claude 콘텐츠 생성
-    print(f"[lead_magnet:{client_slug}] Claude → 리드마그넷 스크립트 생성 중...")
+    print(f"[lead_magnet:{client_slug}] Claude → 리드마그넷 스크립트 생성 중... (목적: {content_purpose})")
     try:
-        lm = _generate_lm_content(topic, info_raw, keyword, brand_voice, client_name)
+        lm = _generate_lm_content(topic, info_raw, keyword, brand_voice, client_name, content_purpose)
     except Exception as e:
         return {"status": "error", "error": f"Claude 생성 실패: {e}"}
 
@@ -801,6 +816,7 @@ def run(
                 keyword,
                 brand_voice,
                 client_name,
+                content_purpose,
             )
             hook = lm.get("hook", topic)
             critic_result = critic_evaluate(
@@ -900,6 +916,7 @@ def run(
         ci_row = db_client.insert("content_ideas", {
             "client_id": client_id,
             "content_type": "feed",
+            "content_purpose": content_purpose,
             "hook": hook,
             "caption": caption_text[:2200],
             "hashtags": lm.get("hashtags", []),

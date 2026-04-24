@@ -22,12 +22,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from datetime import timedelta
+
 from src.db.client import db
 from src.agents.trend_scanner import scan as trend_scan
 from src.agents.info_extractor import extract as extract_info, extract_keyword
 from src.agents.lead_magnet import run as lead_magnet_run
 from src.agents.quality_tracker import run as quality_track_run
 from src.notifications.slack import notify_error
+
+_PURPOSE_QUOTA = {"정보형": 0.40, "공감형": 0.30, "CTA형": 0.20, "트렌드형": 0.10}
+
+
+def _pick_needed_purpose(client_id: str) -> str:
+    """이번 주 content_purpose 분포 조회 → 쿼터 대비 가장 부족한 목적 반환."""
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    rows = db.client.table("content_ideas").select("content_purpose").eq(
+        "client_id", client_id
+    ).gte("created_at", week_ago).not_.is_("content_purpose", "null").execute().data
+
+    counts: dict[str, int] = {p: 0 for p in _PURPOSE_QUOTA}
+    for r in rows:
+        p = r.get("content_purpose", "")
+        if p in counts:
+            counts[p] += 1
+
+    total = sum(counts.values()) or 1
+    ratios = {p: counts[p] / total for p in counts}
+    deficit = {p: _PURPOSE_QUOTA[p] - ratios[p] for p in counts}
+    needed = max(deficit, key=lambda p: deficit[p])
+    print(f"[quota] 이번 주 분포: {counts} → 부족: {needed} (deficit={deficit[needed]:.2f})")
+    return needed
 
 
 def run(client_slug: str) -> dict:
@@ -75,12 +100,14 @@ def run(client_slug: str) -> dict:
         print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 추출 완료")
 
         # Sub-agent 4: 리드마그넷 카드뉴스 생성 → Slack 자동 발송
-        print(f"[{client_name}] [4/5] 리드마그넷 카드뉴스 생성...")
+        needed_purpose = _pick_needed_purpose(client_id)
+        print(f"[{client_name}] [4/5] 리드마그넷 카드뉴스 생성 (목적: {needed_purpose})...")
         result = lead_magnet_run(
             client_slug=client_slug,
             topic=topic,
             info_raw=info_raw,
             keyword=keyword,
+            content_purpose=needed_purpose,
         )
 
         # Sub-agent 5: 품질 추적 (골드스탠다드 비교 + 어제 대비 성장)
