@@ -584,6 +584,11 @@ def _generate_lm_content(
 📌 검증된 훅 공식 (참고):
 {formulas_str}
 
+🚫 데이터 조작 절대 금지:
+- "+X명", "-X명", "조회수 X회", "팔로워 X명" 같은 통계·수치는 아래 [제공할 핵심 정보]에 있는 것만 사용
+- 제공된 정보에 없는 숫자는 절대 만들어 내지 말 것
+- 실제 데이터 없이 통계처럼 보이는 수치 사용 시 신뢰 파괴됨
+
 ⚠️ 절대 쓰면 안 되는 표현 (AI 티 나는 말투):
 - "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
 - "첫째, 둘째, 셋째" 나열
@@ -592,32 +597,34 @@ def _generate_lm_content(
 
 ✅ 이렇게 써 (실제 인플루언서 말투):
 - 직접 경험한 것처럼 ("이거 진짜 몰랐는데", "써봤는데 효과 장난 아니야")
-- 구체적인 숫자랑 상황 예시
+- 구체적인 상황 예시 (수치가 없으면 상황·방법으로 대체)
 - 팔로워가 "저장해야겠다" 싶게 만드는 실용 팁
 - 브랜드 톤: {tone}
 
 [클라이언트] {client_name}
 [주제] {topic}
-[제공할 핵심 정보]
+[제공할 핵심 정보 — 이 내용만 활용, 없는 수치 창작 금지]
 {info_raw}
 [댓글 키워드] {keyword}
 
 아래 JSON을 반환한다. 다른 텍스트 없음.
 
+📌 notion_title 규칙: 한국어만, 30자 이내, 날짜·주차·@ 기호 포함 금지, 핵심 주제 요약
+
 {{
-  "hook": "팔로워가 스크롤 멈추게 하는 훅 (40자 이내, 실제 사람이 쓰는 말투, {keyword} 궁금증 유발)",
+  "hook": "팔로워가 스크롤 멈추게 하는 훅 (40자 이내, 실제 사람이 쓰는 말투, {keyword} 궁금증 유발, 없는 수치 사용 금지)",
   "tease_title": "자료 안에 담긴 내용 제목 (30자 이내, 구어체)",
   "tease_contents": ["목차 항목 6개, 각 25자 이내, 자연스러운 말투"],
   "preview1_heading": "미리보기1 소제목 (20자 이내, 구어체)",
-  "preview1_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용"],
+  "preview1_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용, 없는 수치 창작 금지"],
   "preview2_heading": "미리보기2 소제목 (20자 이내, 구어체)",
-  "preview2_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용"],
+  "preview2_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용, 없는 수치 창작 금지"],
   "blurred_items": ["블러 처리할 정보 4개, 각 30자 이내, 독자가 너무 궁금해할 것들"],
-  "notion_title": "Notion 문서 제목",
+  "notion_title": "주제를 요약한 한국어 제목 (30자 이내, 날짜·@·특수기호 없음)",
   "notion_sections": [
     {{
-      "heading": "섹션 제목",
-      "content": "섹션 본문 (마크다운 허용, 구체적이고 실용적인 내용, 구어체)"
+      "heading": "섹션 제목 (한국어, 특수기호 없음)",
+      "content": "섹션 본문 — [제공할 핵심 정보] 기반의 실용적 내용 (마크다운 허용, 구어체, 없는 수치 창작 금지)"
     }}
   ],
   "hashtags": ["#태그", "..."]
@@ -673,6 +680,16 @@ def _generate_lm_content(
 # Notion API — 정보 보고서 페이지 생성
 # ─────────────────────────────────────────────────────────────────
 
+def _sanitize_notion_text(text: str) -> str:
+    """Notion 전송 전 비정상 Unicode 문자 제거 (◈, ◉, 특수 제어문자 등)."""
+    import re
+    # 사용 빈도 낮은 특수 기호 블록 제거 (◈◉◊◆◇▣▤▥ 등 U+25A0~U+25FF 범위)
+    text = re.sub(r'[■-◿]', '', text)
+    # 기타 제어문자 제거 (탭·개행 제외)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+    return text.strip()
+
+
 def _create_notion_page(
     title: str,
     sections: list[dict],
@@ -692,6 +709,9 @@ def _create_notion_page(
         "Content-Type": "application/json",
     }
 
+    # 비정상 문자 정제
+    title = _sanitize_notion_text(title)
+
     # 페이지 블록 구성
     children: list[dict] = []
 
@@ -707,8 +727,8 @@ def _create_notion_page(
     })
 
     for sec in sections:
-        heading = sec.get("heading", "")
-        content = sec.get("content", "")
+        heading = _sanitize_notion_text(sec.get("heading", ""))
+        content = _sanitize_notion_text(sec.get("content", ""))
         if heading:
             children.append({
                 "object": "block",
