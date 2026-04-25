@@ -20,9 +20,22 @@ _HEADERS = {
 
 
 class SupabaseClient:
+    """httpx 기반 커스텀 클라이언트. supabase-py SDK가 아님.
+    db.client / db.table() / .eq().lte().execute() 체이닝 전부 사용 불가.
+    필터: select/update/delete의 filters dict 또는 db._http.get() 직접 호출.
+    """
+
     def __init__(self) -> None:
         self._base = f"{_URL}/rest/v1"
         self._http = httpx.Client(headers=_HEADERS, timeout=30)
+
+    @property
+    def client(self) -> None:  # type: ignore[override]
+        raise AttributeError(
+            "SupabaseClient는 supabase-py SDK가 아닙니다. "
+            "db.client.table() 체이닝 사용 불가. "
+            "db.select() 또는 db._http.get()을 사용하세요."
+        )
 
     # ------------------------------------------------------------------
     def select(
