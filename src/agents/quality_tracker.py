@@ -124,16 +124,19 @@ JSON 형식으로 반환:
     try:
         resp = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=512,
+            max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
             system=system,
         )
         raw = resp.content[0].text.strip()
-        # JSON 블록 제거
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+        # 잘린 JSON 복구: 마지막 완전한 } 이전까지 파싱 시도
+        start, end = raw.find("{"), raw.rfind("}")
+        if start != -1 and end > start:
+            raw = raw[start:end + 1]
         return json.loads(raw)
     except Exception as e:
         print(f"[quality_tracker] 골드 평가 실패: {e}")
@@ -183,7 +186,7 @@ JSON 형식으로 반환:
     try:
         resp = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=256,
+            max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
             system=system,
         )
@@ -192,6 +195,9 @@ JSON 형식으로 반환:
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start != -1 and end > start:
+            raw = raw[start:end + 1]
         return json.loads(raw)
     except Exception as e:
         print(f"[quality_tracker] delta 분석 실패: {e}")
