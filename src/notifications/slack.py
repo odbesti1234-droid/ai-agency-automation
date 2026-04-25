@@ -82,13 +82,13 @@ def notify_content_ready(
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✅ 승인"},
+                        "text": {"type": "plain_text", "text": "✅ 승인", "emoji": True},
                         "style": "primary",
                         "url": approve_url,
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "❌ 거부"},
+                        "text": {"type": "plain_text", "text": "❌ 거부", "emoji": True},
                         "style": "danger",
                         "url": reject_url,
                     },
@@ -104,15 +104,17 @@ def notify_design_ready(
     ideas: list[dict],
     webhook_url: str | None = None,
 ) -> bool:
-    """디자인 완료 알림 — 카드뉴스 이미지 인라인 + 최종 승인/거부 버튼."""
+    """디자인 완료 알림 — 훅 슬라이드 이미지 인라인 + 나머지 링크 + 최종 승인/거부 버튼."""
     text = f"*[{client_name}] 디자인 {len(ideas)}개 준비됨 — 최종 승인 대기*"
 
     blocks: list[dict] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": f"🎨 [{client_name}] 카드뉴스 {len(ideas)}개 완성"},
+            "text": {"type": "plain_text", "text": f"[{client_name}] 카드뉴스 {len(ideas)}개 완성", "emoji": True},
         },
     ]
+
+    slide_labels = ["hook", "problem", "insight1", "insight2", "insight3", "save", "cta"]
 
     for i, idea in enumerate(ideas[:3], 1):
         idea_id = idea.get("id", "")
@@ -122,7 +124,6 @@ def notify_design_ready(
         hashtags = idea.get("hashtags", [])
         tag_preview = " ".join(hashtags[:5]) if hashtags else ""
 
-        # 콘텐츠 요약 텍스트
         text_body = f"*{i}. [{ctype.upper()}]* {hook}"
         if tag_preview:
             text_body += f"\n_{tag_preview}_"
@@ -132,23 +133,31 @@ def notify_design_ready(
             "text": {"type": "mrkdwn", "text": text_body},
         })
 
-        # carousel_urls 전체 슬라이드 이미지 블록 (없으면 design_url 단독)
         carousel_urls: list = idea.get("carousel_urls") or []
         if not carousel_urls and design_url:
             carousel_urls = [design_url]
 
-        slide_labels = ["hook", "problem", "insight1", "insight2", "insight3", "save", "cta"]
-        for j, url in enumerate(carousel_urls):
-            _clean = url.split("?")[0]
-            if url.startswith("https://") and "supabase" in url and _clean.endswith(".png"):
-                label = slide_labels[j] if j < len(slide_labels) else f"slide{j+1}"
+        # 첫 슬라이드(훅)만 image block으로 표시
+        if carousel_urls:
+            first_url = carousel_urls[0]
+            _clean = first_url.split("?")[0]
+            if first_url.startswith("https://") and _clean.endswith(".png"):
                 blocks.append({
                     "type": "image",
-                    "image_url": url,
-                    "alt_text": f"{client_name} 카드뉴스 {i} [{label}]",
+                    "image_url": first_url,
+                    "alt_text": f"Slide 1 hook",
                 })
-            elif url.startswith("https://"):
-                blocks[-1]["text"]["text"] += f"\n<{url}|🎨 슬라이드 {j+1}>"
+
+        # 나머지 슬라이드는 텍스트 링크로
+        link_parts = []
+        for j, url in enumerate(carousel_urls[1:], 2):
+            label = slide_labels[j - 1] if (j - 1) < len(slide_labels) else f"slide{j}"
+            link_parts.append(f"<{url}|{j}. {label}>")
+        if link_parts:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "슬라이드: " + "  |  ".join(link_parts)},
+            })
 
         # Notion 브리프 링크
         notion_url = idea.get("notion_url")
@@ -167,13 +176,13 @@ def notify_design_ready(
                 "elements": [
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "✅ 최종 승인 · 게시"},
+                        "text": {"type": "plain_text", "text": "최종 승인 · 게시", "emoji": True},
                         "style": "primary",
                         "url": approve_url,
                     },
                     {
                         "type": "button",
-                        "text": {"type": "plain_text", "text": "❌ 재생성"},
+                        "text": {"type": "plain_text", "text": "재생성", "emoji": True},
                         "style": "danger",
                         "url": reject_url,
                     },
