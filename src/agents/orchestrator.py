@@ -1,10 +1,11 @@
-"""main_orchestrator v3 — 리드마그넷 기반 병렬 파이프라인.
+"""main_orchestrator v4 — 실제 뉴스 기반 병렬 파이프라인.
 
 체인:
-  [sub-agent 1] trend_scan
-      ↓
-  [sub-agent 2] info_extractor.extract        ← 병렬
-  [sub-agent 3] info_extractor.extract_keyword ← 병렬
+  [sub-agent 1a] news_fetcher.fetch    ← 병렬
+  [sub-agent 1b] trend_scanner.scan   ← 병렬
+      ↓ (뉴스 confidence >= 0.6 → 실제 팩트 사용 / 미달 → 트렌드 폴백)
+  [sub-agent 2] info_extractor.extract_from_facts (또는 extract)  ← 병렬
+  [sub-agent 3] info_extractor.extract_keyword                    ← 병렬
       ↓
   [sub-agent 4] lead_magnet.run → Slack
 
@@ -25,11 +26,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from datetime import timedelta
 
 from src.db.client import db
+from src.agents.news_fetcher import fetch as news_fetch
 from src.agents.trend_scanner import scan as trend_scan
-from src.agents.info_extractor import extract as extract_info, extract_keyword
+from src.agents.info_extractor import extract as extract_info, extract_keyword, extract_from_facts
 from src.agents.lead_magnet import run as lead_magnet_run
 from src.agents.quality_tracker import run as quality_track_run
 from src.notifications.slack import notify_error
+
+_NEWS_CONFIDENCE_THRESHOLD = 0.6  # 이 이상이면 실제 뉴스 사용
 
 _PURPOSE_QUOTA = {"정보형": 0.40, "공감형": 0.30, "CTA형": 0.20, "트렌드형": 0.10}
 
@@ -85,28 +89,46 @@ def run(client_slug: str) -> dict:
     print(f"[{client_name}] 오케스트레이터 v3 시작 (run_id={run_id})")
 
     try:
-        # Sub-agent 1: 트렌드 스캔
-        print(f"[{client_name}] [1/4] 트렌드 스캔...")
-        snapshot = trend_scan(client_slug)
-        trending_topics = snapshot.get("trending_topics", [])
-        recommended_angle = snapshot.get("recommended_angle", "")
-        topic = (
-            recommended_angle[:120]
-            if recommended_angle
-            else (", ".join(trending_topics[:2]) or "최신 트렌드")
+        # Sub-agents 1a+1b: 실제 뉴스 페치 + 트렌드 스캔 병렬 실행
+        print(f"[{client_name}] [1/5] 실제 뉴스 검색 + 트렌드 스캔 (병렬)...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            news_future = executor.submit(news_fetch, client_slug)
+            trend_future = executor.submit(trend_scan, client_slug)
+            news_facts = news_future.result(timeout=90)
+            snapshot = trend_future.result(timeout=90)
+
+        # 뉴스 confidence 판단 → 실제 뉴스 vs 트렌드 선택
+        use_real_news = (
+            news_facts.get("confidence", 0) >= _NEWS_CONFIDENCE_THRESHOLD
+            and bool(news_facts.get("key_facts"))
         )
-        print(f"[{client_name}] 주제: {topic}")
+
+        if use_real_news:
+            topic = news_facts.get("headline", "")
+            print(f"[{client_name}] ✅ 실제 뉴스 사용: {topic}")
+        else:
+            trending_topics = snapshot.get("trending_topics", [])
+            recommended_angle = snapshot.get("recommended_angle", "")
+            topic = (
+                recommended_angle[:120]
+                if recommended_angle
+                else (", ".join(trending_topics[:2]) or "최신 트렌드")
+            )
+            print(f"[{client_name}] ⬇️ 트렌드 폴백: {topic}")
 
         # Sub-agents 2+3: 정보추출 + 키워드 병렬 실행
-        print(f"[{client_name}] [2+3/4] 정보 추출 + 키워드 생성 (병렬)...")
+        print(f"[{client_name}] [2+3/5] 정보 구조화 + 키워드 생성 (병렬)...")
         with ThreadPoolExecutor(max_workers=2) as executor:
-            info_future = executor.submit(extract_info, topic, client_name, brand_voice)
+            if use_real_news:
+                info_future = executor.submit(extract_from_facts, news_facts, topic, client_name, brand_voice)
+            else:
+                info_future = executor.submit(extract_info, topic, client_name, brand_voice)
             keyword_future = executor.submit(extract_keyword, topic, brand_voice)
             info_raw = info_future.result(timeout=90)
             keyword = keyword_future.result(timeout=30)
 
         print(f"[{client_name}] 키워드: '{keyword}'")
-        print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 추출 완료")
+        print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 {'(실제 뉴스 기반)' if use_real_news else '(트렌드 기반)'} 완료")
 
         # Sub-agent 4: 리드마그넷 카드뉴스 생성 → Slack 자동 발송
         needed_purpose = _pick_needed_purpose(client_id)
@@ -117,6 +139,7 @@ def run(client_slug: str) -> dict:
             info_raw=info_raw,
             keyword=keyword,
             content_purpose=needed_purpose,
+            source_facts=news_facts if use_real_news else None,
         )
 
         # Sub-agent 5: 품질 추적 (골드스탠다드 비교 + 어제 대비 성장)
@@ -135,7 +158,8 @@ def run(client_slug: str) -> dict:
             "output": {
                 "topic": topic,
                 "keyword": keyword,
-                "trending_topics": trending_topics[:3],
+                "use_real_news": use_real_news,
+                "news_source": news_facts.get("source", "") if use_real_news else "",
                 "lead_magnet_id": result.get("id"),
                 "slide_count": len(result.get("slide_urls", [])),
                 "notion_url": result.get("notion_url"),
@@ -144,8 +168,10 @@ def run(client_slug: str) -> dict:
             "ended_at": datetime.now(timezone.utc).isoformat(),
         })
 
+        news_label = f"뉴스({news_facts.get('source', '')})" if use_real_news else "트렌드"
         print(
             f"[{client_name}] 완료 — "
+            f"소스: {news_label}, "
             f"슬라이드 {len(result.get('slide_urls', []))}장, "
             f"품질 {quality_score}/100, "
             f"Notion: {result.get('notion_url', '없음')}"

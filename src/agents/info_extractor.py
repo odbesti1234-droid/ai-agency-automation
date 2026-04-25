@@ -52,6 +52,47 @@ def extract(topic: str, client_name: str, brand_voice: dict) -> str:
     return resp.content[0].text.strip()
 
 
+def extract_from_facts(facts: dict, topic: str, client_name: str, brand_voice: dict) -> str:
+    """실제 뉴스 팩트 → 팔로워에게 유용한 콘텐츠 포인트 5-7개.
+
+    info_extractor.extract()의 AI 창작 버전을 대체.
+    팩트에 없는 내용은 절대 추가하지 않는다.
+    """
+    niche = brand_voice.get("niche", "") or brand_voice.get("tone", "") or client_name
+    tone = brand_voice.get("tone", "친근한")
+    key_facts = facts.get("key_facts", [])
+    headline = facts.get("headline", topic)
+    source = facts.get("source", "")
+    content_angle = facts.get("content_angle", "")
+
+    facts_str = "\n".join(f"- {f}" for f in key_facts)
+
+    prompt = f"""너는 {niche} 분야 인플루언서야.
+아래 실제 뉴스 팩트를 바탕으로 팔로워에게 즉시 유용한 콘텐츠 포인트 5-7개를 만들어.
+
+📰 뉴스: {headline} (출처: {source})
+💡 콘텐츠 각도: {content_angle}
+
+[실제 팩트 — 이것만 사용, 변형·추가 절대 금지]
+{facts_str}
+
+🚫 규칙:
+- 위 팩트 목록에 없는 수치·기능·내용 추가 금지
+- "아마도", "~일 것 같다" 추측 금지
+- 팔로워 입장에서 "이게 나한테 어떤 의미야?"로 해석해줘
+- 바로 써먹을 수 있는 액션 포인트 위주
+- 브랜드 톤: {tone}
+
+각 항목 앞에 "- " 붙이기. 목록만 반환, 다른 텍스트 없음."""
+
+    resp = _claude.messages.create(
+        model=_MODEL,
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return resp.content[0].text.strip()
+
+
 def extract_keyword(topic: str, brand_voice: dict) -> str:
     """댓글 트리거로 쓸 짧은 키워드 생성 (2~3자 한글)."""
     niche = brand_voice.get("niche", "") or ""

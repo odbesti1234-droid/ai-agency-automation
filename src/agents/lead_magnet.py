@@ -540,6 +540,7 @@ def _generate_lm_content(
     brand_voice: dict,
     client_name: str,
     content_purpose: str = "정보형",
+    source_facts: dict | None = None,
 ) -> dict:
     """Claude로 리드마그넷 슬라이드 스크립트 + Notion 문서 본문 생성."""
     niche = brand_voice.get("niche", "") or brand_voice.get("industry", "") or client_name
@@ -566,7 +567,31 @@ def _generate_lm_content(
     }
     purpose_hint = _purpose_guide.get(content_purpose, "")
 
-    prompt = f"""너는 {niche} 분야 인스타그램 인플루언서야. 팔로워한테 {topic}에 대해 진짜 쓸모있는 자료를 공유하려고 해.
+    # 실제 뉴스 팩트 섹션 구성
+    real_news_block = ""
+    notion_resource_hint = ""
+    if source_facts and source_facts.get("key_facts"):
+        headline = source_facts.get("headline", topic)
+        source = source_facts.get("source", "")
+        source_url = source_facts.get("source_url", "")
+        key_facts = source_facts.get("key_facts", [])
+        resource_title = source_facts.get("resource_title", "")
+        facts_str = "\n".join(f"  - {f}" for f in key_facts)
+        src_label = f"{source}" + (f" ({source_url})" if source_url else "")
+        real_news_block = f"""
+📰 실제 뉴스 (이 팩트만 사용 — 변형·추가 금지):
+  출처: {src_label}
+  헤드라인: {headline}
+  팩트:
+{facts_str}
+"""
+        notion_resource_hint = f"""
+📌 notion_sections는 '{resource_title or topic} 완벽 가이드' 형식으로:
+  - 첫 섹션: 뉴스 핵심 내용 요약 (출처 명시)
+  - 중간 섹션들: 실제 활용법, 단계별 사용법, 프롬프트/팁 (실제 팩트 기반)
+  - 마지막 섹션: 팔로워가 지금 당장 할 수 있는 액션 1가지"""
+
+    prompt = f"""너는 {niche} 분야 인스타그램 인플루언서야. 팔로워한테 {topic}에 대해 진짜 쓸모있는 자료를 공유하려고 해.{real_news_block}
 
 [콘텐츠 목적: {content_purpose}]
 {purpose_hint}
@@ -608,7 +633,7 @@ def _generate_lm_content(
 [댓글 키워드] {keyword}
 
 아래 JSON을 반환한다. 다른 텍스트 없음.
-
+{notion_resource_hint}
 📌 notion_title 규칙: 한국어만, 30자 이내, 날짜·주차·@ 기호 포함 금지, 핵심 주제 요약
 
 {{
@@ -695,6 +720,7 @@ def _create_notion_page(
     sections: list[dict],
     keyword: str,
     client_name: str,
+    source_facts: dict | None = None,
 ) -> str | None:
     """Notion API로 정보 보고서 페이지 생성 → 공개 URL 반환."""
     token = os.environ.get("NOTION_TOKEN", "")
@@ -725,6 +751,22 @@ def _create_notion_page(
             "color": "yellow_background",
         },
     })
+
+    # 실제 뉴스 출처 블록 (있을 때만)
+    if source_facts and source_facts.get("source"):
+        src = source_facts.get("source", "")
+        src_url = source_facts.get("source_url", "")
+        src_date = source_facts.get("date", "")
+        src_text = f"출처: {src}" + (f" | {src_date}" if src_date else "") + (f"\n{src_url}" if src_url else "")
+        children.append({
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {"content": src_text}}],
+                "icon": {"emoji": "📰"},
+                "color": "blue_background",
+            },
+        })
 
     for sec in sections:
         heading = _sanitize_notion_text(sec.get("heading", ""))
@@ -795,6 +837,7 @@ def run(
     info_raw: str,
     keyword: str,
     content_purpose: str = "정보형",
+    source_facts: dict | None = None,
 ) -> dict:
     """리드마그넷 전체 파이프라인 실행."""
     t0 = time.time()
@@ -817,7 +860,7 @@ def run(
     # Claude 콘텐츠 생성
     print(f"[lead_magnet:{client_slug}] Claude → 리드마그넷 스크립트 생성 중... (목적: {content_purpose})")
     try:
-        lm = _generate_lm_content(topic, info_raw, keyword, brand_voice, client_name, content_purpose)
+        lm = _generate_lm_content(topic, info_raw, keyword, brand_voice, client_name, content_purpose, source_facts)
     except Exception as e:
         return {"status": "error", "error": f"Claude 생성 실패: {e}"}
 
@@ -860,6 +903,7 @@ def run(
                 brand_voice,
                 client_name,
                 content_purpose,
+                source_facts,
             )
             hook = lm.get("hook", topic)
             critic_result = critic_evaluate(
@@ -881,6 +925,7 @@ def run(
         sections=lm.get("notion_sections", []),
         keyword=keyword,
         client_name=client_name,
+        source_facts=source_facts,
     )
     if notion_url:
         print(f"[lead_magnet:{client_slug}] Notion 완료: {notion_url}")
