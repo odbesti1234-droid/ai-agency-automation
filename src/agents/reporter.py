@@ -68,9 +68,17 @@ def _get_ig_stats(db: SupabaseClient, client_id: str) -> dict:
     """post_analytics에서 지난 7일 실제 IG 성과 집계."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     try:
-        rows = db.client.table("post_analytics").select(
-            "content_idea_id, likes, saves, shares, reach, impressions, collected_at"
-        ).eq("client_id", client_id).gte("collected_at", week_ago).execute().data
+        resp = db._http.get(
+            f"{db._base}/post_analytics",
+            params={
+                "select": "content_idea_id,likes,saves,shares,reach,impressions,collected_at",
+                "client_id": f"eq.{client_id}",
+                "collected_at": f"gte.{week_ago}",
+                "limit": "200",
+            },
+        )
+        resp.raise_for_status()
+        rows = resp.json()
     except Exception:
         rows = []
 

@@ -67,13 +67,18 @@ def collect_due() -> list[dict]:
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
 
-        # Supabase client에서 lte 필터 지원 여부 확인 필요 → raw SQL 사용
-        from src.db.client import SupabaseClient as _SC
-        due_rows = db.client.table("content_ideas").select(
-            "id, client_id, ig_post_id, hook, published_at"
-        ).lte("analytics_due_at", now_iso).eq(
-            "analytics_collected", False
-        ).not_.is_("ig_post_id", "null").execute().data
+        resp = db._http.get(
+            f"{db._base}/content_ideas",
+            params={
+                "select": "id,client_id,ig_post_id,hook,published_at",
+                "analytics_due_at": f"lte.{now_iso}",
+                "analytics_collected": "eq.false",
+                "ig_post_id": "not.is.null",
+                "limit": "100",
+            },
+        )
+        resp.raise_for_status()
+        due_rows = resp.json()
 
         if not due_rows:
             print("[analytics_collector] 수집 대상 없음")
