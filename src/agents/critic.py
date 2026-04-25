@@ -113,7 +113,7 @@ def evaluate(
         verdict, total, scores, strengths, weak_points, rewrite_direction
     """
     tone = brand_voice.get("tone", "일반")
-    forbid = brand_voice.get("forbid_keywords", [])
+    forbid = (brand_voice.get("forbid_keywords", []) or []) + (brand_voice.get("forbidden_hooks", []) or [])
     positioning = brand_voice.get("positioning", "")
 
     slides_text = ""

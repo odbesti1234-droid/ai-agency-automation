@@ -542,9 +542,21 @@ def _generate_lm_content(
     content_purpose: str = "정보형",
 ) -> dict:
     """Claude로 리드마그넷 슬라이드 스크립트 + Notion 문서 본문 생성."""
-    brand_json = json.dumps(brand_voice, ensure_ascii=False)[:800]
-    niche = brand_voice.get("niche", "") or brand_voice.get("tone", "") or client_name
+    niche = brand_voice.get("niche", "") or brand_voice.get("industry", "") or client_name
     tone = brand_voice.get("tone", "친근한")
+    positioning = brand_voice.get("positioning", "")
+
+    # 품질 루프 핵심: 누적 피드백 필드 명시 추출
+    forbidden_hooks: list = brand_voice.get("forbidden_hooks", [])
+    preferred_patterns: list = brand_voice.get("preferred_patterns", [])
+    hook_formulas: list = brand_voice.get("hook_formulas", [])
+    example_hooks: list = brand_voice.get("example_hooks", [])
+    hook_library: list = brand_voice.get("hook_library", [])
+    forbid_keywords: list = brand_voice.get("forbid_keywords", []) + brand_voice.get("allow_keywords", [])
+
+    forbidden_hooks_str = "\n".join(f"  - {h}" for h in forbidden_hooks[:8]) if forbidden_hooks else "  없음"
+    preferred_str = "\n".join(f"  - {p}" for p in preferred_patterns[:5]) if preferred_patterns else "  없음"
+    formulas_str = "\n".join(f"  - {f}" for f in (hook_formulas or example_hooks or hook_library)[:5]) if (hook_formulas or example_hooks or hook_library) else "  없음"
 
     _purpose_guide = {
         "정보형": "수치·사실·체크리스트 중심. 독자가 저장하고 나중에 참고하게 만드는 구체적 정보 전달.",
@@ -560,6 +572,18 @@ def _generate_lm_content(
 {purpose_hint}
 이번 콘텐츠는 반드시 이 목적에 맞게 훅·구조·CTA를 설계한다.
 
+[클라이언트 포지셔닝]
+{positioning}
+
+⛔ 과거에 거부된 훅 공식 — 절대 사용 금지:
+{forbidden_hooks_str}
+
+✅ 과거에 잘 된 패턴 — 이 스타일로 써라:
+{preferred_str}
+
+📌 검증된 훅 공식 (참고):
+{formulas_str}
+
 ⚠️ 절대 쓰면 안 되는 표현 (AI 티 나는 말투):
 - "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
 - "첫째, 둘째, 셋째" 나열
@@ -573,7 +597,6 @@ def _generate_lm_content(
 - 브랜드 톤: {tone}
 
 [클라이언트] {client_name}
-[브랜드 보이스] {brand_json}
 [주제] {topic}
 [제공할 핵심 정보]
 {info_raw}
@@ -924,6 +947,13 @@ def run(
             "design_url": cover_url,
             "status": "final_approved" if _auto else "design_ready",
             "human_approved": bool(_auto),
+            "critic_verdict": critic_result.get("verdict", ""),
+            "critic_notes": json.dumps({
+                "total": critic_result.get("total", 0),
+                "scores": critic_result.get("scores", {}),
+                "weak_points": critic_result.get("weak_points", []),
+                "strengths": critic_result.get("strengths", []),
+            }, ensure_ascii=False),
         })
         content_idea_id = ci_row.get("id")
         print(f"[lead_magnet:{client_slug}] content_ideas 저장 완료 (id={str(content_idea_id)[:8]})")

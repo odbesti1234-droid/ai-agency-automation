@@ -107,6 +107,25 @@ def analyze(client_slug: str) -> dict:
             "period_end": now.isoformat(),
         })
 
+        # 피드백 루프 핵심: brand_voice.forbidden_hooks / preferred_patterns 누적 업데이트
+        if good_hooks or bad_hooks:
+            try:
+                bv: dict = client.get("brand_voice") or {}
+                existing_forbidden: list = bv.get("forbidden_hooks", []) or []
+                existing_preferred: list = bv.get("preferred_patterns", []) or []
+
+                # 중복 없이 추가 (최대 20개 유지)
+                new_forbidden = list(dict.fromkeys(existing_forbidden + bad_hooks))[-20:]
+                new_preferred = list(dict.fromkeys(existing_preferred + good_hooks))[-20:]
+
+                bv["forbidden_hooks"] = new_forbidden
+                bv["preferred_patterns"] = new_preferred
+
+                db.update("clients", filters={"id": client_id}, patch={"brand_voice": bv})
+                print(f"[{client_name}] brand_voice 업데이트 — forbidden:{len(new_forbidden)} preferred:{len(new_preferred)}")
+            except Exception as e:
+                print(f"[{client_name}] brand_voice 업데이트 실패 (비치명적): {e}")
+
         print(f"[{client_name}] 피드백 분석 완료:\n{summary_text}")
         return {"status": "completed", "client": client_name, "summary": summary_text}
 
