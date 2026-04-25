@@ -30,6 +30,7 @@ from src.agents.news_fetcher import fetch as news_fetch
 from src.agents.trend_scanner import scan as trend_scan
 from src.agents.info_extractor import extract as extract_info, extract_keyword, extract_from_facts
 from src.agents.lead_magnet import run as lead_magnet_run
+from src.agents.authority_content import run as authority_run
 from src.agents.quality_tracker import run as quality_track_run
 from src.notifications.slack import notify_error
 
@@ -130,17 +131,28 @@ def run(client_slug: str) -> dict:
         print(f"[{client_name}] 키워드: '{keyword}'")
         print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 {'(실제 뉴스 기반)' if use_real_news else '(트렌드 기반)'} 완료")
 
-        # Sub-agent 4: 리드마그넷 카드뉴스 생성 → Slack 자동 발송
-        needed_purpose = _pick_needed_purpose(client_id)
-        print(f"[{client_name}] [4/5] 리드마그넷 카드뉴스 생성 (목적: {needed_purpose})...")
-        result = lead_magnet_run(
-            client_slug=client_slug,
-            topic=topic,
-            info_raw=info_raw,
-            keyword=keyword,
-            content_purpose=needed_purpose,
-            source_facts=news_facts if use_real_news else None,
-        )
+        # Sub-agent 4: 콘텐츠 모드 분기 (authority vs lead_magnet)
+        strategy_mode = brand_voice.get("content_strategy", {}).get("mode", "lead_magnet")
+
+        if strategy_mode == "authority":
+            print(f"[{client_name}] [4/5] 에디토리얼 카드뉴스 생성 (권위형 — 댓글 CTA 없음)...")
+            result = authority_run(
+                client_slug=client_slug,
+                topic=topic,
+                info_raw=info_raw,
+                source_facts=news_facts if use_real_news else None,
+            )
+        else:
+            needed_purpose = _pick_needed_purpose(client_id)
+            print(f"[{client_name}] [4/5] 리드마그넷 카드뉴스 생성 (목적: {needed_purpose})...")
+            result = lead_magnet_run(
+                client_slug=client_slug,
+                topic=topic,
+                info_raw=info_raw,
+                keyword=keyword,
+                content_purpose=needed_purpose,
+                source_facts=news_facts if use_real_news else None,
+            )
 
         # Sub-agent 5: 품질 추적 (골드스탠다드 비교 + 어제 대비 성장)
         print(f"[{client_name}] [5/5] 품질 추적 분석...")
@@ -169,9 +181,10 @@ def run(client_slug: str) -> dict:
         })
 
         news_label = f"뉴스({news_facts.get('source', '')})" if use_real_news else "트렌드"
+        mode_label = "에디토리얼" if strategy_mode == "authority" else "리드마그넷"
         print(
             f"[{client_name}] 완료 — "
-            f"소스: {news_label}, "
+            f"모드: {mode_label}, 소스: {news_label}, "
             f"슬라이드 {len(result.get('slide_urls', []))}장, "
             f"품질 {quality_score}/100, "
             f"Notion: {result.get('notion_url', '없음')}"

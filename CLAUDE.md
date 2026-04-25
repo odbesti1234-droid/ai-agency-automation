@@ -27,7 +27,7 @@
 - **워킹 디렉토리**: `C:\Users\Administrator\Documents\oido92\ai-agency-automation`
 - **Railway URL**: `https://ai-agency-automation-production.up.railway.app`
 - **Supabase 프로젝트**: `fqifodojsvbszwxuoylx`
-- **운영 계정**: `fit_ai_founder` / `father_plan_b` (= plan_b_by_pm)
+- **운영 계정**: `fit_ai_founder` (활성) — 추가 계정은 DB `clients` 테이블 기준
 - **파이프라인 상태머신**: `pending → approved → design_ready → final_approved → published`
 
 ---

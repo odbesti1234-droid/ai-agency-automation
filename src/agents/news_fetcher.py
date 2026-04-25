@@ -31,7 +31,10 @@ _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 _INDUSTRY_QUERIES: dict[str, list[str]] = {
     "fitness": ["피트니스 헬스 최신 연구 트렌드 2025", "운동 다이어트 과학적 팁"],
     "real-estate": ["부동산 시장 최신 뉴스 2025", "공인중개사 부동산 정책 변화"],
-    "luxury-real-estate": ["강남 분당 판교 하이엔드 부동산 시장 동향 2025", "고급 주거 시장 트렌드 럭셔리 부동산"],
+    "luxury-real-estate": [
+        "KB부동산 강남 분당 판교 아파트 타운하우스 매매가 실거래가 2025",
+        "한국부동산원 서울 고급주택 매매지수 거래량 동향 2025",
+    ],
     "beauty": ["뷰티 코스메틱 신제품 출시 2025", "K-뷰티 피부관리 최신 트렌드"],
     "f-and-b": ["카페 외식 트렌드 신메뉴 2025", "요식업 SNS 바이럴 성공 사례"],
 }
@@ -143,15 +146,27 @@ def fetch(client_slug: str) -> dict:
     print(f"[{client_name}] 실제 뉴스 검색: '{search_q}'")
 
     try:
+        # authority 모드 여부에 따라 검색 스타일 결정
+        _brand_voice_local: dict = client.get("brand_voice") or {}
+        _strategy_mode = _brand_voice_local.get("content_strategy", {}).get("mode", "lead_magnet")
+        _is_authority = _strategy_mode == "authority"
+
+        _pass1_system = (
+            "너는 부동산 시장 데이터 분석가다. 주어진 키워드로 KB부동산·한국부동산원·국토부 등 "
+            "공식 기관의 확인된 통계·실거래가·매매지수 데이터 1건을 찾아라. "
+            "기관명, 발표 날짜, 구체적 수치(가격·등락률·거래량)를 빠짐없이 요약해라. "
+            "공식 데이터를 찾지 못하면 '없음'이라고만 써라."
+            if _is_authority else
+            "너는 뉴스 검색 도우미다. 주어진 키워드로 가장 최신·구체적인 뉴스 1건을 찾아라. "
+            "기사 제목, 날짜, 출처, 핵심 내용(수치·기능명 포함)을 빠짐없이 요약해라. "
+            "찾은 내용이 없으면 '없음'이라고만 써라."
+        )
+
         # Pass 1 — 웹 검색 (최대 2회 검색)
         pass1 = _client.messages.create(
             model=_MODEL,
             max_tokens=700,
-            system=(
-                "너는 뉴스 검색 도우미다. 주어진 키워드로 가장 최신·구체적인 뉴스 1건을 찾아라. "
-                "기사 제목, 날짜, 출처, 핵심 내용(수치·기능명 포함)을 빠짐없이 요약해라. "
-                "찾은 내용이 없으면 '없음'이라고만 써라."
-            ),
+            system=_pass1_system,
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{
                 "role": "user",
