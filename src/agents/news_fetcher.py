@@ -31,6 +31,7 @@ _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 _INDUSTRY_QUERIES: dict[str, list[str]] = {
     "fitness": ["피트니스 헬스 최신 연구 트렌드 2025", "운동 다이어트 과학적 팁"],
     "real-estate": ["부동산 시장 최신 뉴스 2025", "공인중개사 부동산 정책 변화"],
+    "luxury-real-estate": ["강남 분당 판교 하이엔드 부동산 시장 동향 2025", "고급 주거 시장 트렌드 럭셔리 부동산"],
     "beauty": ["뷰티 코스메틱 신제품 출시 2025", "K-뷰티 피부관리 최신 트렌드"],
     "f-and-b": ["카페 외식 트렌드 신메뉴 2025", "요식업 SNS 바이럴 성공 사례"],
 }
