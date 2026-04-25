@@ -44,11 +44,24 @@ def _utc_hour_for_kst(kst_hour: int) -> int:
     return (kst_hour - KST_OFFSET) % 24
 
 
+def _safe_job(name: str, fn, *args, **kwargs):
+    """모든 job을 감싸는 예외 안전 래퍼. 실패해도 스케줄러 루프 유지."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        print(f"[Cron] ❌ {name} 실패 — {e}")
+        try:
+            kakao_send_me(f"[Cron 오류] {name}\n{str(e)[:120]}")
+        except Exception:
+            pass
+        return []
+
+
 def daily_job() -> None:
     """매일 09:00 KST: trend_scan → info_extract → lead_magnet 생성 → Slack 승인 요청."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] daily_job 시작 — {now.isoformat()}")
-    results = _orchestrator_run_all()
+    results = _safe_job("daily_job", _orchestrator_run_all)
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
     kakao_send_me(
@@ -61,12 +74,12 @@ def weekly_report_job() -> None:
     """매주 일요일 18:00 KST (09:00 UTC): 주간 리포트 + 피드백 학습 분석."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] weekly_report 시작 — {now.isoformat()}")
-    results = reporter_run_all_active()
+    results = _safe_job("weekly_report", reporter_run_all_active)
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] weekly_report 완료 — {ok}/{len(results)} 성공")
 
     print(f"[Cron] feedback_learner 시작 — {now.isoformat()}")
-    fb_results = feedback_learner_run_all()
+    fb_results = _safe_job("feedback_learner", feedback_learner_run_all)
     fb_ok = sum(1 for r in fb_results if r.get("status") == "completed")
     print(f"[Cron] feedback_learner 완료 — {fb_ok}/{len(fb_results)} 성공")
 
@@ -75,7 +88,7 @@ def onboarding_poll_job() -> None:
     """6시간마다 미온보딩 클라이언트 자동 온보딩."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] onboarding_poll 시작 — {now.isoformat()}")
-    results = onboarder_run_pending()
+    results = _safe_job("onboarding_poll", onboarder_run_pending)
     done = sum(1 for r in results if r.get("status") == "completed")
     if results:
         print(f"[Cron] onboarding_poll 완료 — {done}/{len(results)} 온보딩")
@@ -87,7 +100,7 @@ def designer_poll_job() -> None:
     """30분마다 approved 상태 아이디어 → designer 실행 (human gate 이후 자동 체인)."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] designer_poll 시작 — {now.isoformat()}")
-    results = designer_run_all_active()
+    results = _safe_job("designer_poll", designer_run_all_active)
     designed = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] designer_poll 완료 — {designed}/{len(results)} 처리")
 
@@ -96,7 +109,7 @@ def token_refresh_job() -> None:
     """매주 월요일 09:00 KST: IG 토큰 만료 체크 + 자동 갱신."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] token_refresh 시작 — {now.isoformat()}")
-    results = ig_token_refresh_all(days_threshold=10)
+    results = _safe_job("token_refresh", ig_token_refresh_all, days_threshold=10)
     refreshed = sum(1 for r in results if r.get("refreshed"))
     print(f"[Cron] token_refresh 완료 — {refreshed}/{len(results)} 갱신")
 
@@ -105,7 +118,7 @@ def publisher_poll_job() -> None:
     """30분마다 final_approved 상태 아이디어 → Instagram 발행."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] publisher_poll 시작 — {now.isoformat()}")
-    results = publisher_run_all_active()
+    results = _safe_job("publisher_poll", publisher_run_all_active)
     published = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] publisher_poll 완료 — {published}/{len(results)} 발행")
 
@@ -114,7 +127,7 @@ def analytics_poll_job() -> None:
     """2시간마다 게시 후 48h 경과 포스트 → IG Insights 수집."""
     now = datetime.now(timezone.utc)
     print(f"[Cron] analytics_poll 시작 — {now.isoformat()}")
-    results = analytics_collect_due()
+    results = _safe_job("analytics_poll", analytics_collect_due)
     collected = sum(1 for r in results if r.get("status") == "collected")
     print(f"[Cron] analytics_poll 완료 — {collected}/{len(results)} 수집")
 
