@@ -5,3 +5,4 @@ builder = "dockerfile"
 startCommand = "python -m src.scheduler.cron"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+numReplicas = 1

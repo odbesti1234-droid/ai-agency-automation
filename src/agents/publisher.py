@@ -303,68 +303,70 @@ def run(client_slug: str) -> dict:
             design_url: str = idea.get("design_url", "")
             print(f"[publisher:{client_slug}] 처리 중 [{idea_id[:8]}] {hook_preview}...")
 
+            # 동시성 lock: final_approved → publishing 으로 atomic 전환.
+            # 다른 cron 인스턴스가 같은 idea를 잡으면 매치 0건이 반환되어 skip.
+            claimed = db_client.update(
+                "content_ideas",
+                filters={"id": idea_id, "status": "final_approved"},
+                patch={"status": "publishing"},
+            )
+            if not claimed:
+                print(f"[publisher:{client_slug}] {idea_id[:8]} 다른 인스턴스가 선점 — 건너뜀")
+                results.append({"idea_id": idea_id, "ig_post_id": None, "success": False, "skipped": "claimed_by_other"})
+                continue
+
             ig_post_id: str | None = None
             last_error: str | None = None
 
-            for attempt in range(1, 4):
-                try:
-                    caption = _build_caption(idea)
+            # retry 제거: timeout 후 IG가 백그라운드 publish 완료하면 재시도가 중복 게시를 만든다.
+            # 실패 시 즉시 'failed'로 마킹하고 운영자가 수동 확인.
+            try:
+                caption = _build_caption(idea)
 
-                    # 캐러셀 vs 단일 이미지 판별
-                    if len(carousel_urls) > 1:
-                        print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중... (시도 {attempt}/3)")
-                        # 각 슬라이드별 child container 생성
-                        child_ids = []
-                        for i, slide_url in enumerate(carousel_urls, 1):
-                            child_id = _ig_create_container(
-                                ig_account_id, ig_access_token,
-                                image_url=slide_url,
-                                is_carousel_item=True,
-                            )
-                            child_ids.append(child_id)
-                            print(f"    ├─ 슬라이드 {i}/{len(carousel_urls)}: {child_id}")
-                            time.sleep(1)  # API rate limit 방지
-
-                        # parent carousel container 생성
-                        creation_id = _ig_create_carousel_container(
+                if len(carousel_urls) > 1:
+                    print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중...")
+                    child_ids = []
+                    for i, slide_url in enumerate(carousel_urls, 1):
+                        child_id = _ig_create_container(
                             ig_account_id, ig_access_token,
-                            children=child_ids,
-                            caption=caption,
+                            image_url=slide_url,
+                            is_carousel_item=True,
                         )
-                        print(f"  → Step 1 완료 (carousel creation_id={creation_id}, children={len(child_ids)})")
-                    else:
-                        # 단일 이미지
-                        image_url = carousel_urls[0] if carousel_urls else design_url
-                        print(f"  → Step 1: 단일 이미지 컨테이너 생성... (시도 {attempt}/3)")
-                        creation_id = _ig_create_container(
-                            ig_account_id, ig_access_token, image_url, caption
-                        )
-                        print(f"  → Step 1 완료 (creation_id={creation_id})")
+                        child_ids.append(child_id)
+                        print(f"    ├─ 슬라이드 {i}/{len(carousel_urls)}: {child_id}")
+                        time.sleep(1)
 
-                    # IG API 권장: 컨테이너 준비 대기 (최대 30초)
-                    time.sleep(5)
+                    creation_id = _ig_create_carousel_container(
+                        ig_account_id, ig_access_token,
+                        children=child_ids,
+                        caption=caption,
+                    )
+                    print(f"  → Step 1 완료 (carousel creation_id={creation_id}, children={len(child_ids)})")
+                else:
+                    image_url = carousel_urls[0] if carousel_urls else design_url
+                    print(f"  → Step 1: 단일 이미지 컨테이너 생성...")
+                    creation_id = _ig_create_container(
+                        ig_account_id, ig_access_token, image_url, caption
+                    )
+                    print(f"  → Step 1 완료 (creation_id={creation_id})")
 
-                    print(f"  → Step 2: 게시 실행...")
-                    ig_post_id = _ig_publish(ig_account_id, ig_access_token, creation_id)
-                    print(f"  → Step 2 완료 (ig_post_id={ig_post_id})")
-                    break
+                time.sleep(5)
 
-                except Exception as e:
-                    last_error = str(e)
-                    print(f"  → 시도 {attempt}/3 실패: {e}")
-                    if attempt < 3:
-                        wait = 2 ** attempt
-                        print(f"  → {wait}초 후 재시도...")
-                        time.sleep(wait)
+                print(f"  → Step 2: 게시 실행...")
+                ig_post_id = _ig_publish(ig_account_id, ig_access_token, creation_id)
+                print(f"  → Step 2 완료 (ig_post_id={ig_post_id})")
+            except Exception as e:
+                last_error = str(e)
+                print(f"  → 게시 실패: {e}")
 
             if ig_post_id is None:
                 errors.append({"idea_id": idea_id, "error": last_error or "unknown"})
                 db_client.update(
                     "content_ideas",
                     filters={"id": idea_id},
-                    patch={"status": "publish_failed"},
+                    patch={"status": "failed"},
                 )
-                print(f"[publisher:{client_slug}] ❌ {idea_id[:8]} → publish_failed")
+                print(f"[publisher:{client_slug}] ❌ {idea_id[:8]} → failed")
                 results.append({"idea_id": idea_id, "ig_post_id": None, "success": False})
                 continue
 
