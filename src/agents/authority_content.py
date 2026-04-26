@@ -705,12 +705,6 @@ def run(
     except Exception as e:
         print(f"[authority:{client_slug}] Slack 알림 실패: {e}")
 
-    try:
-        from src.notifications.kakao import notify_design_ready as kakao_notify
-        kakao_notify(client_name=client_name, hook=headline, design_url=cover_url)
-    except Exception as e:
-        print(f"[authority:{client_slug}] 카카오 알림 실패 (비치명적): {e}")
-
     elapsed = time.time() - t0
     print(f"\n[authority:{client_slug}] ✅ 완료 ({elapsed:.1f}s)")
     print(f"  커버: {cover_url}")

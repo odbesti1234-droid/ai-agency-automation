@@ -27,7 +27,6 @@ import schedule
 import uvicorn
 
 from src.agents.orchestrator import run_all_active as _orchestrator_run_all
-from src.notifications.kakao import send_me as kakao_send_me
 from src.agents.feedback_learner import run_all_active as feedback_learner_run_all
 from src.agents.designer import run_all_active as designer_run_all_active
 from src.agents.reporter import run_all_active as reporter_run_all_active
@@ -50,10 +49,6 @@ def _safe_job(name: str, fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except Exception as e:
         print(f"[Cron] ❌ {name} 실패 — {e}")
-        try:
-            kakao_send_me(f"[Cron 오류] {name}\n{str(e)[:120]}")
-        except Exception:
-            pass
         return []
 
 
@@ -64,10 +59,6 @@ def daily_job() -> None:
     results = _safe_job("daily_job", _orchestrator_run_all)
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
-    kakao_send_me(
-        f"[일일리포트] {now.strftime('%m/%d')} KST 09:00\n"
-        f"콘텐츠 생성 {ok}/{len(results)} 클라이언트 완료"
-    )
 
 
 def weekly_report_job() -> None:

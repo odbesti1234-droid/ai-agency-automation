@@ -32,7 +32,6 @@ import anthropic
 
 from src.db.client import SupabaseClient
 from src.notifications.slack import send as slack_send
-from src.notifications.kakao import send_me as kakao_send_me
 
 _ANTHROPIC_CLIENT: anthropic.Anthropic | None = None
 
@@ -285,23 +284,6 @@ def _format_slack_quality(
     return "\n".join(lines)
 
 
-def _format_kakao_quality(
-    client_name: str,
-    score: int,
-    delta: dict | None,
-) -> str:
-    if delta:
-        total_delta = (
-            delta.get("hook_delta", 0)
-            + delta.get("structure_delta", 0)
-            + delta.get("cta_delta", 0)
-        )
-        delta_str = f", 어제 대비 {'+' if total_delta >= 0 else ''}{total_delta}점"
-    else:
-        delta_str = ""
-    return f"[{client_name}] 오늘 카드뉴스 {score}/100{delta_str}"
-
-
 # ── 메인 실행 ─────────────────────────────────────────────────────────────────
 
 def run(client_slug: str, idea_id: str | None = None) -> dict:
@@ -393,13 +375,6 @@ def run(client_slug: str, idea_id: str | None = None) -> dict:
             slack_send(slack_text, webhook_url=slack_webhook)
         except Exception as e:
             print(f"[quality_tracker:{client_slug}] Slack 전송 실패: {e}")
-
-        # 카카오 요약
-        kakao_text = _format_kakao_quality(client_name, score, delta)
-        try:
-            kakao_send_me(kakao_text)
-        except Exception as e:
-            print(f"[quality_tracker:{client_slug}] 카카오 전송 실패: {e}")
 
         duration = time.time() - t0
         output: dict[str, Any] = {
