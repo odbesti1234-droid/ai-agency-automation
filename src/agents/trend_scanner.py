@@ -130,15 +130,26 @@ def scan(client_slug: str, force: bool = False) -> dict:
     industry: str = client.get("industry", "")
 
     # 캐시 체크 — 오늘 이미 스캔했으면 재사용
+    # db.select(limit=1)은 정렬 보장 X → _http.get으로 order=created_at.desc 명시 (캐시 hit률 보장)
     if not force:
         from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=_CACHE_HOURS)).isoformat()
-        recent = db.select("trend_snapshots", filters={"client_id": client_id}, limit=1)
+        resp = db._http.get(
+            f"{db._base}/trend_snapshots",
+            params={
+                "select": "id,trends,created_at",
+                "client_id": f"eq.{client_id}",
+                "order": "created_at.desc",
+                "limit": "1",
+            },
+        )
+        resp.raise_for_status()
+        recent = resp.json()
         if recent:
             created = recent[0].get("created_at", "")
             if created and created >= cutoff:
                 cached = recent[0].get("trends", {})
-                print(f"[{client['name']}] 트렌드 캐시 사용 (최근 {_CACHE_HOURS}h 이내)")
+                print(f"[{client['name']}] 트렌드 캐시 사용 (최근 {_CACHE_HOURS}h 이내, created={created[:19]})")
                 return {**cached, "snapshot_id": recent[0].get("id"), "client_id": client_id, "cached": True}
 
     run_row = db.insert("agent_runs", {
