@@ -117,6 +117,20 @@ def run(client_slug: str) -> dict:
             )
             print(f"[{client_name}] ⬇️ 트렌드 폴백: {topic}")
 
+        # 출처 의무 게이트 — 부동산/금융 등 hallucination 리스크 큰 카테고리에서
+        # 뉴스 출처 없는 트렌드 기반 콘텐츠 생성을 차단. brand_voice.require_source=true 필요.
+        strategy_mode = brand_voice.get("content_strategy", {}).get("mode", "lead_magnet")
+        require_source = bool(brand_voice.get("require_source", False))
+        if strategy_mode == "authority" and require_source and not use_real_news:
+            reason = f"require_source=true && 뉴스 confidence 미달 (트렌드 기반 차단). topic 시도: {topic[:80]}"
+            print(f"[{client_name}] ⛔ {reason}")
+            notify_error(client_name, "orchestrator", reason)
+            db.update("agent_runs", filters={"id": run_id}, patch={
+                "status": "skipped",
+                "output": {"reason": "no_source_facts", "topic_attempted": topic, "use_real_news": False},
+            })
+            return {"status": "skipped", "client": client_slug, "reason": "no_source_facts"}
+
         # Sub-agents 2+3: 정보추출 + 키워드 병렬 실행
         print(f"[{client_name}] [2+3/5] 정보 구조화 + 키워드 생성 (병렬)...")
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -132,7 +146,7 @@ def run(client_slug: str) -> dict:
         print(f"[{client_name}] 정보 {len(info_raw.splitlines())}개 {'(실제 뉴스 기반)' if use_real_news else '(트렌드 기반)'} 완료")
 
         # Sub-agent 4: 콘텐츠 모드 분기 (authority vs lead_magnet)
-        strategy_mode = brand_voice.get("content_strategy", {}).get("mode", "lead_magnet")
+        # strategy_mode는 위 출처 게이트에서 이미 계산됨
 
         if strategy_mode == "authority":
             print(f"[{client_name}] [4/5] 에디토리얼 카드뉴스 생성 (권위형 — 댓글 CTA 없음)...")
