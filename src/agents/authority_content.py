@@ -661,8 +661,15 @@ def run(
     # content_ideas INSERT → 승인 파이프라인
     content_idea_id = None
     try:
+        # 출처 자동 삽입 — require_source 클라이언트의 콘텐츠는 캡션에 출처 박혀야 critic SOURCE_FACTS 게이트 통과
+        source_line = ""
+        if source_facts and source_facts.get("source"):
+            src = source_facts.get("source", "")
+            dt = source_facts.get("date", "")
+            source_line = f"\n\n📰 출처: {src}" + (f" ({dt})" if dt else "")
+
         caption_text = (
-            f"{headline}\n\n{sub_headline}\n\n"
+            f"{headline}\n\n{sub_headline}{source_line}\n\n"
             + " ".join(content.get("hashtags", []))
         )
 
