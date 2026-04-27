@@ -249,7 +249,73 @@ N+2. cta (1장 고정)
     "emotion_tone": "흥분",
     "text_content": "headline + subtext 합산"
   }
-]"""
+]
+
+[GOLD-STANDARD EXAMPLE — 부동산 6장 카드뉴스]
+이 수준의 구체성·수치·시각 디테일을 목표로 하라. placeholder가 아닌 실전 카피처럼.
+[
+  {
+    "slide": 1,
+    "role": "hook",
+    "headline": "분당 9억이 사라졌다",
+    "subtext": "한 달 만에",
+    "visual_direction": "분당 야경 다크 블루 배경, 화면 중앙 9억 숫자가 글리치 효과로 흩어지는 인서트, 좌측 상단 작은 브랜드 핸들",
+    "emotion_tone": "긴장감",
+    "text_content": "분당 9억이 사라졌다 한 달 만에"
+  },
+  {
+    "slide": 2,
+    "role": "problem",
+    "headline": "수내동 보고 망설였다면",
+    "subtext": "이번 달 거래 23건 완료\n호가 평균 4,200만원 상승\n지금 안 보면 다음 달엔 더 올라",
+    "visual_direction": "따뜻한 다크 베이지 배경, 좌측 정렬 3줄 리스트, 각 줄 앞 작은 빨간 도트, 하단 1/6 인디케이터",
+    "emotion_tone": "공감",
+    "text_content": "수내동 보고 망설였다면 이번 달 거래 23건 완료 호가 평균 4,200만원 상승 지금 안 보면 다음 달엔 더 올라"
+  },
+  {
+    "slide": 3,
+    "role": "insight",
+    "headline": "수내동만 9.2% 단독 상승",
+    "subtext": "강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자",
+    "visual_direction": "다크 그린 배경, 좌측 9.2% 큰 숫자(120pt), 우측 강남·송파·수내동 비교 막대그래프, 우하단 KB부동산 출처 워터마크",
+    "emotion_tone": "흥미",
+    "text_content": "수내동만 9.2% 단독 상승 강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자"
+  },
+  {
+    "slide": 4,
+    "role": "insight",
+    "headline": "지금 들어갈 3개 단지",
+    "subtext": "양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중",
+    "visual_direction": "다크 배경, 단지명 3개 가로 카드 배치, 각 카드 상단 가격·중앙 평수·하단 학군 정보, 카드 사이 1px 골드 디바이더",
+    "emotion_tone": "신뢰",
+    "text_content": "지금 들어갈 3개 단지 양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중"
+  },
+  {
+    "slide": 5,
+    "role": "save",
+    "headline": "저장하면 신규 매물 알림",
+    "subtext": "분당 9억대 매물 들어올 때마다 댓글로 알려드립니다",
+    "visual_direction": "베이지·골드 accent 배경(반전 느낌), 우측 상단 큰 북마크 아이콘(48pt), 텍스트 좌측 정렬, 하단 5/6 인디케이터",
+    "emotion_tone": "신뢰",
+    "text_content": "저장하면 신규 매물 알림 분당 9억대 매물 들어올 때마다 댓글로 알려드립니다"
+  },
+  {
+    "slide": 6,
+    "role": "cta",
+    "headline": "DM 주세요",
+    "subtext": "@planb_by_pm — 임장 일정 잡아드립니다",
+    "visual_direction": "다크→골드 세로 그라디언트 배경, 화면 중앙 핸들 큰 글자(64pt), 하단 DM 아이콘과 화살표",
+    "emotion_tone": "흥분",
+    "text_content": "DM 주세요 @planb_by_pm — 임장 일정 잡아드립니다"
+  }
+]
+
+[KEY LEARNINGS — 위 예시에서 반드시 차용할 5가지]
+1. headline에 구체 숫자(9억, 9.2%, 23건) → 추상어 ZERO
+2. subtext에 출처(KB부동산) + 비교군(강남·송파) → 신뢰 보강
+3. visual_direction에 픽셀 단위 디렉션(120pt, 48pt) + 색상 + 위치 명시
+4. 각 슬라이드 emotion_tone이 긴장→공감→흥미→신뢰→흥분 단계적 상승
+5. cta는 "DM 주세요" 같은 단일 동사 + 핸들 + 추가 유도 1줄"""
 
 
 _CRITIC_PROMPT = """너는 바이럴 콘텐츠 심사관이다. 아래 기준으로 아이디어를 평가해 JSON만 반환한다.
