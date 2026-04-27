@@ -172,11 +172,17 @@ def _ig_publish(
 
 
 def _build_caption(idea: dict) -> str:
-    """caption + hashtags 합산 (2200자 한도)."""
+    """caption + hashtags 합산 (2200자 한도). caption에 이미 hashtags가 포함돼 있으면 중복 추가 방지."""
     caption = idea.get("caption", "")
     hashtags = idea.get("hashtags", [])
-    tag_str = " ".join(hashtags) if hashtags else ""
-    full = f"{caption}\n\n{tag_str}".strip() if tag_str else caption
+    if not hashtags:
+        return caption[:2200]
+    # authority_content/lead_magnet는 caption_text 생성 시 hashtags를 이미 합쳐서 저장.
+    # 첫 hashtag가 caption에 이미 있으면 중복 — 그냥 caption 반환 (2026-04-27 planb_pm 캡션 8개 해시태그 2번 게시 사건 근거).
+    if hashtags[0] in caption:
+        return caption[:2200]
+    tag_str = " ".join(hashtags)
+    full = f"{caption}\n\n{tag_str}".strip()
     return full[:2200]
 
 
