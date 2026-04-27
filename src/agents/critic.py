@@ -169,7 +169,20 @@ def evaluate(
         if start != -1 and end > start:
             raw = raw[start:end]
 
-        return _parse_critic_json(raw)
+        result = _parse_critic_json(raw)
+
+        # LLM 점수와 별개의 결정적 게이트 — 위반 1개라도 있으면 reject 강제
+        violations = _rule_check(hook, slide_scripts, brand_voice)
+        if violations:
+            result["verdict"] = "reject"
+            existing_weak = result.get("weak_points") or []
+            result["weak_points"] = existing_weak + [f"[RULE] {v}" for v in violations]
+            result["rewrite_direction"] = "룰 위반 수정: " + " | ".join(violations[:3])
+            print(f"[critic:RULE] {len(violations)}개 위반 → reject 강제")
+            for v in violations:
+                print(f"  - {v}")
+
+        return result
 
     except Exception as e:
         print(f"[critic] 평가 실패: {e}")
@@ -192,6 +205,78 @@ def _parse_critic_json(raw: str) -> dict:
     except json.JSONDecodeError:
         repaired = re.sub(r",(\s*[}\]])", r"\1", raw)  # trailing comma 제거
         return json.loads(repaired)
+
+
+# 결정적 룰 게이트 — LLM 평가에 의존하지 않고 정규식·길이로 검증
+_HOOK_PARADOX_RE = r"(인데|했는데|라는데|줘도|에도\s|불구|오히려|는데도|줬는데|썼는데)"
+_HOOK_FIRSTPERSON_RE = r"(내가|제가|저는|저\s|나는|우리[가는])"
+_SELF_CASE_RE = r"(D\+\d+|\d+\s*(일|개월|주)\s*(만|째|만에|동안)|\d+번\s*(시도|돌렸|썼|만들))"
+_MONEY_RE = r"\d+\s*(억|만원|원)"
+_SOURCE_RE = r"(출처|Source|source|국토부|KB부동산|네이버부동산|REB|한국부동산원)"
+_NLIST_RE = r"(\d+)\s*가지"
+
+
+def _rule_check(hook: str, slide_scripts: list, brand_voice: dict) -> list[str]:
+    """결정적 룰 검증. 위반 사항 문자열 리스트 반환 (빈 리스트면 통과).
+
+    LLM 평가 점수와 별개로 작동. 위반 1개라도 발생 시 verdict='reject' 강제.
+    """
+    import re as _re
+    violations: list[str] = []
+
+    # 슬라이드 + hook 합산 텍스트 (정규식 매칭용)
+    all_text = hook + "\n"
+    bullet_max = 0
+    for s in slide_scripts[:8]:
+        if isinstance(s, dict):
+            all_text += " ".join(str(v) for v in s.values() if isinstance(v, str)) + "\n"
+            for key in ("tease_contents", "bullets", "preview1_bullets", "preview2_bullets", "blurred_items"):
+                items = s.get(key)
+                if isinstance(items, list):
+                    bullet_max = max(bullet_max, len(items))
+        else:
+            all_text += str(s) + "\n"
+
+    # 1. HOOK_LENGTH
+    if len(hook) > 20:
+        violations.append(f"HOOK_LENGTH: 훅 {len(hook)}자 (20자 초과)")
+
+    # 2. HOOK_FORMULA — 숫자·역설·1인칭 공감 중 2개 이상
+    has_number = bool(_re.search(r"\d", hook))
+    has_paradox = bool(_re.search(_HOOK_PARADOX_RE, hook))
+    has_first = bool(_re.search(_HOOK_FIRSTPERSON_RE, hook))
+    formula_count = sum([has_number, has_paradox, has_first])
+    if formula_count < 2:
+        missing = []
+        if not has_number: missing.append("숫자")
+        if not has_paradox: missing.append("역설")
+        if not has_first: missing.append("1인칭공감")
+        violations.append(f"HOOK_FORMULA: {formula_count}/3 (부족: {','.join(missing)})")
+
+    # 3. OFF_PILLAR — lead_magnet 프롬프트에서 LLM이 표기한 신호
+    if "OFF_PILLAR" in hook or "⚠️OFF" in hook:
+        violations.append("OFF_PILLAR: 콘텐츠가 brand_voice.content_pillars 밖")
+
+    # 4. SELF_CASE — require_self_case=true 시
+    if brand_voice.get("require_self_case"):
+        if not _re.search(_SELF_CASE_RE, all_text):
+            violations.append("SELF_CASE: 운영자 본인 D+N/N일 시도 케이스 패턴 0개")
+
+    # 5. SOURCE_FACTS — require_source=true 시 구체 가격 있는데 출처 없으면 위반
+    if brand_voice.get("require_source"):
+        has_money = bool(_re.search(_MONEY_RE, all_text))
+        has_source = bool(_re.search(_SOURCE_RE, all_text))
+        if has_money and not has_source:
+            violations.append("SOURCE_FACTS: 구체 가격/수치 있으나 출처 표기 없음")
+
+    # 6. N_LIST_MISMATCH — hook의 'N가지'와 실제 리스트 길이 불일치
+    n_match = _re.search(_NLIST_RE, hook)
+    if n_match and bullet_max > 0:
+        promised = int(n_match.group(1))
+        if promised != bullet_max:
+            violations.append(f"N_LIST_MISMATCH: 훅이 {promised}가지 약속, 실제 항목 {bullet_max}개")
+
+    return violations
 
 
 def evaluate_with_retry(
