@@ -38,6 +38,25 @@ from src.notifications.slack import notify_published, notify_error
 _GRAPH_API_VERSION = "v21.0"
 _GRAPH_BASE = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
 
+# IG Graph API rate limit 메시지 패턴 — 매치 시 즉시 failed 박지 않고 다음 cron 재시도
+_RATE_LIMIT_PATTERNS = (
+    "Application request limit reached",
+    "rate limit",
+    "limit reached",
+    "Too many calls",
+    "User request limit reached",
+    "(#4)",  # Meta error code 4 = rate limit
+    "(#17)",  # Meta error code 17 = user-level rate limit
+    "(#613)",  # Meta error code 613 = calls to this api have exceeded the rate limit
+)
+
+
+def _is_rate_limit_error(msg: str) -> bool:
+    if not msg:
+        return False
+    low = msg.lower()
+    return any(p.lower() in low for p in _RATE_LIMIT_PATTERNS)
+
 
 # ─────────────────────────────────────────────────────────────────
 # Instagram Graph API
@@ -359,14 +378,26 @@ def run(client_slug: str) -> dict:
                 print(f"  → 게시 실패: {e}")
 
             if ig_post_id is None:
-                errors.append({"idea_id": idea_id, "error": last_error or "unknown"})
-                db_client.update(
-                    "content_ideas",
-                    filters={"id": idea_id},
-                    patch={"status": "failed"},
-                )
-                print(f"[publisher:{client_slug}] ❌ {idea_id[:8]} → failed")
-                results.append({"idea_id": idea_id, "ig_post_id": None, "success": False})
+                err = last_error or "unknown"
+                errors.append({"idea_id": idea_id, "error": err})
+                # rate limit이면 status를 final_approved로 되돌려 다음 cron이 재시도하도록.
+                # 그 외 에러는 기존대로 failed로 마킹 (운영자 수동 확인).
+                if _is_rate_limit_error(err):
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={"status": "final_approved", "last_error": err[:500]},
+                    )
+                    print(f"[publisher:{client_slug}] ⏸ {idea_id[:8]} → rate-limit, retry next cron")
+                    results.append({"idea_id": idea_id, "ig_post_id": None, "success": False, "skipped": "rate_limit"})
+                else:
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={"status": "failed", "last_error": err[:500]},
+                    )
+                    print(f"[publisher:{client_slug}] ❌ {idea_id[:8]} → failed: {err[:80]}")
+                    results.append({"idea_id": idea_id, "ig_post_id": None, "success": False})
                 continue
 
             published_at_dt = datetime.now(timezone.utc)
@@ -468,10 +499,14 @@ def run_all_active() -> list[dict]:
         db_client.close()
 
     results = []
-    for client in clients:
+    for i, client in enumerate(clients):
         slug = client.get("slug", "")
-        if slug:
-            results.append(run(slug))
+        if not slug:
+            continue
+        if i > 0:
+            # 클라이언트 간 IG Graph API rate limit 분산 (carousel 7+ API call 연속 시 한도 초과)
+            time.sleep(15)
+        results.append(run(slug))
     return results
 
 

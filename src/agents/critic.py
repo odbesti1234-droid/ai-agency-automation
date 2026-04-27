@@ -169,19 +169,29 @@ def evaluate(
         if start != -1 and end > start:
             raw = raw[start:end]
 
-        result = json.loads(raw)
-        return result
+        return _parse_critic_json(raw)
 
     except Exception as e:
         print(f"[critic] 평가 실패: {e}")
+        # parse_error verdict 로 분리 — fallback이 conditional 흉내내면 retry 무력화됨
         return {
-            "verdict": "conditional",
-            "total": 65,
-            "scores": {"hook": 20, "save_value": 15, "differentiation": 12, "slide_structure": 10, "brand_fit": 8},
+            "verdict": "parse_error",
+            "total": 0,
+            "scores": {"hook": 0, "save_value": 0, "differentiation": 0, "slide_structure": 0, "brand_fit": 0},
             "strengths": [],
             "weak_points": [f"심사 실패: {e}"],
             "rewrite_direction": "",
         }
+
+
+def _parse_critic_json(raw: str) -> dict:
+    """LLM JSON 응답 파싱 — trailing comma 등 일반 깨짐 자동 복구."""
+    import re
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        repaired = re.sub(r",(\s*[}\]])", r"\1", raw)  # trailing comma 제거
+        return json.loads(repaired)
 
 
 def evaluate_with_retry(
@@ -220,6 +230,7 @@ def evaluate_with_retry(
         total = critic_result.get("total", 0)
         print(f"[critic] 시도 {attempts + 1}: {verdict} ({total}/100)")
 
+        # parse_error는 retry. pass/conditional만 break.
         if verdict in ("pass", "conditional"):
             break
 
