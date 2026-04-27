@@ -123,6 +123,69 @@ def analytics_poll_job() -> None:
     print(f"[Cron] analytics_poll 완료 — {collected}/{len(results)} 수집")
 
 
+def pending_reminder_job() -> None:
+    """24시간 넘게 design_ready/pending 상태로 방치된 콘텐츠 → 클라이언트별 Slack 리마인더.
+
+    근거: 2026-04-27 진단에서 fit_ai_founder pending 평균 80h 방치 → 사용자 수동 일괄 정리(4-26 14:00에 82건).
+    매일 1회 09:00 KST에 점검 + 슬랙 리마인더로 응답률 향상.
+    """
+    from src.db.client import SupabaseClient  # noqa: PLC0415
+    from src.notifications.slack import send as slack_send  # noqa: PLC0415
+    from src.api.approve import make_approve_url  # noqa: PLC0415
+
+    now = datetime.now(timezone.utc)
+    print(f"[Cron] pending_reminder 시작 — {now.isoformat()}")
+
+    db_client = SupabaseClient()
+    try:
+        clients = db_client.select("clients", filters={"is_active": True})
+        for client in clients:
+            slug = client.get("slug", "")
+            if not slug:
+                continue
+            client_id = client.get("id")
+            client_name = client.get("name", slug)
+            slack_webhook = client.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
+            if not slack_webhook:
+                continue
+
+            ideas = db_client.select(
+                "content_ideas",
+                filters={"client_id": client_id, "status": "design_ready", "human_approved": False},
+                limit=20,
+            ) or []
+
+            stale = []
+            for idea in ideas:
+                created_str = idea.get("created_at") or ""
+                try:
+                    created_at = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                age_h = (now - created_at).total_seconds() / 3600
+                if age_h >= 24:
+                    stale.append((idea, age_h))
+
+            if not stale:
+                print(f"[pending_reminder:{slug}] 24h+ 방치 0건")
+                continue
+
+            stale.sort(key=lambda x: -x[1])
+            lines = [f"*[{client_name}] 승인 대기 {len(stale)}건 — 24시간+ 경과*", ""]
+            for idea, age_h in stale[:5]:
+                hook = (idea.get("hook") or "")[:50]
+                idea_id = idea.get("id", "")
+                approve_url = make_approve_url(idea_id, "approved", stage="design")
+                age_label = f"{age_h:.0f}h" if age_h < 48 else f"{age_h/24:.1f}d"
+                lines.append(f"  • `{age_label}` {hook}... → <{approve_url}|승인>")
+            if len(stale) > 5:
+                lines.append(f"  ... 외 {len(stale) - 5}건")
+            slack_send("\n".join(lines), webhook_url=slack_webhook)
+            print(f"[pending_reminder:{slug}] 리마인더 발송 ({len(stale)}건)")
+    finally:
+        db_client.close()
+
+
 def _start_api_server() -> None:
     port = int(os.environ.get("PORT", "8000"))
     print(f"[API] 승인 서버 시작 — port {port}")
@@ -139,6 +202,7 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
+    schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)  # daily_job 30분 후 리마인더
     schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(2).hours.do(analytics_poll_job)
@@ -147,6 +211,7 @@ def main() -> None:
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
+    print(f"[Cron] pending_reminder — 매일 {daily_utc:02d}:30 UTC (24h+ 방치 콘텐츠 알림)")
     print("[Cron] designer poll — 30분 간격 (approved → design_ready 자동 체인)")
     print("[Cron] publisher poll — 30분 간격")
     print("[Cron] analytics poll — 2시간 간격 (48h 성과 수집)")

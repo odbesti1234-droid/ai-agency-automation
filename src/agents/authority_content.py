@@ -665,7 +665,41 @@ def run(
             f"{headline}\n\n{sub_headline}\n\n"
             + " ".join(content.get("hashtags", []))
         )
-        _auto = client_row.get("auto_approve", False)
+
+        # 실제 critic 평가 — 하드코딩 'approved'/85 제거 (4-27 출처 없는 카드뉴스 게시 사건의 진짜 원인)
+        from src.agents.critic import evaluate as _critic_eval
+        slide_scripts_for_critic = [
+            {"role": "cover", "headline": headline, "subtext": sub_headline},
+        ]
+        for ins in insights:
+            slide_scripts_for_critic.append({
+                "role": "insight",
+                "headline": _sanitize(ins.get("heading", "")),
+                "subtext": _sanitize(ins.get("body", "")),
+            })
+        slide_scripts_for_critic.append({"role": "cta", "headline": cta_text, "subtext": cta_sub})
+
+        try:
+            critic_result = _critic_eval(
+                hook=headline,
+                slide_scripts=slide_scripts_for_critic,
+                caption=caption_text,
+                brand_voice=brand_voice,
+                industry=client_row.get("industry", ""),
+            )
+        except Exception as ce:
+            print(f"[authority:{client_slug}] critic 평가 오류 (skip): {ce}")
+            critic_result = {"verdict": "parse_error", "total": 0, "scores": {}, "weak_points": [str(ce)], "strengths": []}
+
+        verdict = critic_result.get("verdict", "conditional")
+        _auto = client_row.get("auto_approve", False) and verdict in ("pass", "approved")
+        if verdict == "reject":
+            _status = "rejected"
+        elif _auto:
+            _status = "final_approved"
+        else:
+            _status = "design_ready"
+
         ci_row = db_client.insert("content_ideas", {
             "client_id": client_id,
             "content_type": "feed",
@@ -675,17 +709,20 @@ def run(
             "hashtags": content.get("hashtags", []),
             "carousel_urls": slide_urls,
             "design_url": cover_url,
-            "status": "final_approved" if _auto else "design_ready",
+            "status": _status,
             "human_approved": bool(_auto),
-            "critic_verdict": "approved",
+            "critic_verdict": verdict,
             "critic_notes": json.dumps({
                 "mode": "authority",
                 "source_facts": bool(source_facts),
-                "total": 85,
+                "total": critic_result.get("total", 0),
+                "scores": critic_result.get("scores", {}),
+                "weak_points": critic_result.get("weak_points", []),
+                "strengths": critic_result.get("strengths", []),
             }, ensure_ascii=False),
         })
         content_idea_id = ci_row.get("id")
-        print(f"[authority:{client_slug}] content_ideas 저장 완료 (id={str(content_idea_id)[:8]})")
+        print(f"[authority:{client_slug}] content_ideas 저장 완료 (id={str(content_idea_id)[:8]}, verdict={verdict}, status={_status})")
     except Exception as e:
         print(f"[authority:{client_slug}] content_ideas 저장 실패 (비치명적): {e}")
 
