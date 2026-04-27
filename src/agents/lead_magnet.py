@@ -554,10 +554,23 @@ def _generate_lm_content(
     example_hooks: list = brand_voice.get("example_hooks", [])
     hook_library: list = brand_voice.get("hook_library", [])
     forbid_keywords: list = brand_voice.get("forbid_keywords", []) + brand_voice.get("allow_keywords", [])
+    content_pillars: list = brand_voice.get("content_pillars", [])
+    require_self_case: bool = bool(brand_voice.get("require_self_case", False))
 
     forbidden_hooks_str = "\n".join(f"  - {h}" for h in forbidden_hooks[:8]) if forbidden_hooks else "  없음"
     preferred_str = "\n".join(f"  - {p}" for p in preferred_patterns[:5]) if preferred_patterns else "  없음"
     formulas_str = "\n".join(f"  - {f}" for f in (hook_formulas or example_hooks or hook_library)[:5]) if (hook_formulas or example_hooks or hook_library) else "  없음"
+    pillars_str = "\n".join(f"  - {p}" for p in content_pillars[:5]) if content_pillars else ""
+    pillars_block = f"\n[콘텐츠 필러 — 이 카테고리 범위 안에서만 작성]\n{pillars_str}\n→ topic이 어느 pillar에 속하는지 self-check. 어느 pillar에도 안 맞으면 hook 첫 줄에 '⚠️OFF_PILLAR' 표기.\n" if pillars_str else ""
+
+    self_case_block = ""
+    if require_self_case:
+        self_case_block = """
+🎯 **본인 사례 의무 — 일반론 금지**
+- preview1_bullets, preview2_bullets 중 최소 1개 이상은 운영자 본인의 구체적 시도 케이스
+- 형식: "D+N: [내가 X 시도] → [실제 결과 Y]" 또는 "[구체 상황]에서 [내가 한 행동] → [수치/결과]"
+- 일반론(일반 이론·다른 사람 사례·추상 권고)만으로 채우면 콘텐츠 차별화 0 — AI 슬롭 신호
+"""
 
     _purpose_guide = {
         "정보형": "수치·사실·체크리스트 중심. 독자가 저장하고 나중에 참고하게 만드는 구체적 정보 전달.",
@@ -599,7 +612,7 @@ def _generate_lm_content(
 
 [클라이언트 포지셔닝]
 {positioning}
-
+{pillars_block}{self_case_block}
 ⛔ 과거에 거부된 훅 공식 — 절대 사용 금지:
 {forbidden_hooks_str}
 
@@ -636,10 +649,16 @@ def _generate_lm_content(
 {notion_resource_hint}
 📌 notion_title 규칙: 한국어만, 30자 이내, 날짜·주차·@ 기호 포함 금지, 핵심 주제 요약
 
+📌 **훅 룰 (강제)**
+- 길이 20자 이내 (40자 X)
+- 다음 3가지 중 2개 이상 포함: ① 구체 숫자(D+N, N분, N% 등) ② 역설/반전("했는데 안 됐다", "됐다는데 안 된다") ③ 1인칭 공감("내가/제가 ~했습니다")
+- 모호한 약속어 금지: "~더라고요", "~인 것 같아요", 단순 명사형
+- "N가지" 약속 어구는 hook에서 사용 금지 (모호 + tease_contents 길이와 어긋날 위험). 사용하면 tease_contents 정확히 N개여야 하며 그 외에는 약속어 빼라.
+
 {{
-  "hook": "팔로워가 스크롤 멈추게 하는 훅 (40자 이내, 실제 사람이 쓰는 말투, {keyword} 궁금증 유발, 없는 수치 사용 금지)",
+  "hook": "20자 이내 훅 (위 룰 준수)",
   "tease_title": "자료 안에 담긴 내용 제목 (30자 이내, 구어체)",
-  "tease_contents": ["목차 항목 6개, 각 25자 이내, 자연스러운 말투"],
+  "tease_contents": ["목차 항목 6개, 각 25자 이내, 자연스러운 말투. 만약 hook에 'N가지' 있으면 정확히 N개"],
   "preview1_heading": "미리보기1 소제목 (20자 이내, 구어체)",
   "preview1_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용, 없는 수치 창작 금지"],
   "preview2_heading": "미리보기2 소제목 (20자 이내, 구어체)",
