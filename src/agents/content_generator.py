@@ -228,6 +228,15 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 - `bottom_band`   : 하단 띠 CTA (단일 행동)
 - `meta_source`   : 출처 박스 (신뢰 신호 — benchmark 슬라이드 의무, "2026.MM.DD KB부동산" 식)
 
+[슬라이드 옵션 필드 — 빌더가 직접 읽어서 시각 강화 (선택, 강력 권장)]
+다음 필드를 슬라이드 객체에 명시하면 카드 디자이너가 자동으로 시각 컴포넌트로 변환한다:
+- `ghost_text`     (insight/tip): 배경에 깔리는 큰 키워드. 예: "TIP 02", "1M", "-9.2%". 미명시 시 자동 번호.
+- `category_label` (insight/tip): 상단·뱃지 라벨 텍스트 (≤24자, 대문자 권장). 예: "MARKET INSIGHT", "TIP 02", "DESIGN". 미명시 시 "INSIGHT".
+- `source`         (save/benchmark): 출처 기관·매체. 예: "KB부동산", "한국감정원", "통계청". benchmark·근거형 슬라이드는 반드시 명시.
+- `date`           (save/benchmark): 출처 발행일 (YYYY.MM.DD 형식 권장). 예: "2026.04.15".
+
+source 또는 date가 있으면 save/benchmark 슬라이드 하단에 메타 출처 박스가 자동 노출된다. AI 슬롭 차단 핵심 신호이므로 benchmark·통계 인용 슬라이드는 무조건 채워라.
+
 [본문 분해 룰 — 시각 컴포넌트 단위 (필수)]
 client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따른다. 일반 룰:
 - 각 슬라이드의 text_content는 **3줄 이하** 강제 (planb_pm 02~05 빽빽 본문 회피)
@@ -314,6 +323,8 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "headline": "수내동만 9.2% 단독 상승",
     "subtext": "강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자",
     "visual_direction": "다크 그린 배경, 좌측 9.2% 큰 숫자(120pt), 우측 강남·송파·수내동 비교 막대그래프, 우하단 KB부동산 출처 워터마크",
+    "ghost_text": "9.2%",
+    "category_label": "MARKET INSIGHT",
     "emotion_tone": "흥미",
     "text_content": "수내동만 9.2% 단독 상승 강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자"
   },
@@ -323,6 +334,8 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "headline": "지금 들어갈 3개 단지",
     "subtext": "양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중",
     "visual_direction": "다크 배경, 단지명 3개 가로 카드 배치, 각 카드 상단 가격·중앙 평수·하단 학군 정보, 카드 사이 1px 골드 디바이더",
+    "ghost_text": "TIP 02",
+    "category_label": "ENTRY POINT",
     "emotion_tone": "신뢰",
     "text_content": "지금 들어갈 3개 단지 양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중"
   },
@@ -332,6 +345,8 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "headline": "저장하면 신규 매물 알림",
     "subtext": "분당 9억대 매물 들어올 때마다 댓글로 알려드립니다",
     "visual_direction": "베이지·골드 accent 배경(반전 느낌), 우측 상단 큰 북마크 아이콘(48pt), 텍스트 좌측 정렬, 하단 5/6 인디케이터",
+    "source": "KB부동산 주간시계열",
+    "date": "2026.04.22",
     "emotion_tone": "신뢰",
     "text_content": "저장하면 신규 매물 알림 분당 9억대 매물 들어올 때마다 댓글로 알려드립니다"
   },

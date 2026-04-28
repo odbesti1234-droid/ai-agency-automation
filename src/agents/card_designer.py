@@ -753,6 +753,14 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     dots_html = _make_dots(total, slide_num, accent)
 
     num_str = f"{insight_idx:02d}"
+    # ghost_text: LLM이 "TIP 02" / "1M" 식 키워드 명시했으면 그걸로 대체. 없으면 숫자 폴백.
+    ghost_raw = (slide.get("ghost_text") or "").strip()
+    bg_text = ghost_raw if ghost_raw else num_str
+    # bg-num은 폰트가 매우 크므로 텍스트가 짧을 때만 그대로, 길면 size 줄여 대응
+    bg_fs = 680 if len(bg_text) <= 2 else (520 if len(bg_text) <= 4 else (380 if len(bg_text) <= 7 else 240))
+    # category_label: "MARKET INSIGHT" / "TIP 02" / "DESIGN" 등. 없으면 "INSIGHT" 폴백.
+    category_label = (slide.get("category_label") or "INSIGHT").strip().upper()[:24]
+    # 헤드라인이 짧으면 ghost_text에 보여줄 키워드가 따로 있을 가능성 큼
     hl_fs = 48 if len(headline) <= 16 else (40 if len(headline) <= 22 else 33)
 
     data_block = ""
@@ -775,9 +783,10 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     position:absolute; top:50%; right:-60px;
     transform:translateY(-50%);
     font-family:'Playfair Display',serif;
-    font-style:italic; font-size:680px; font-weight:700;
+    font-style:italic; font-size:{bg_fs}px; font-weight:700;
     color:{accent}; opacity:0.055; line-height:1;
     pointer-events:none; user-select:none;
+    white-space:nowrap;
   }}
   /* 상단 가로 액센트 바 */
   .top-bar {{
@@ -846,14 +855,14 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
 <body><div class="wrap">
   <div class="top-bar"></div>
   <div class="left-bar"></div>
-  <div class="bg-num">{num_str}</div>
+  <div class="bg-num">{_e(bg_text)}</div>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
   <div class="dots">{dots_html}</div>
-  <div class="data-report-label">&#8212; DATA REPORT &#8212;</div>
+  <div class="data-report-label">&#8212; {_e(category_label)} &#8212;</div>
   <div class="insight-badge">
     <span class="insight-num">{num_str}</span>
-    <span class="insight-label">INSIGHT</span>
+    <span class="insight-label">{_e(category_label)}</span>
   </div>
   <div class="h-rule"></div>
   <div class="headline">{_e(headline)}</div>
@@ -888,6 +897,16 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
         f'<div class="benefit">{_e(subtext[:80])}</div>' if subtext else ""
     )
 
+    # benchmark/save 슬라이드 신뢰 신호 — slide_script가 source/date 명시하면 메타 출처 박스 인라인 노출
+    source = (slide.get("source") or "").strip()
+    date_str = (slide.get("date") or "").strip()
+    meta_block = ""
+    if source or date_str:
+        meta_text = " · ".join(p for p in (date_str, source) if p)
+        meta_block = (
+            f'<div class="meta-source"><span>{_e(meta_text[:48])}</span></div>'
+        )
+
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><style>
 {_BASE_CSS}
@@ -916,6 +935,16 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
     opacity:0.65; text-align:center; line-height:1.6;
     max-width:760px; margin-bottom:0;
   }}
+  .meta-source {{
+    margin-top:24px;
+    display:inline-block;
+    padding:6px 14px;
+    border:1px solid rgba({rgb_primary},0.35);
+  }}
+  .meta-source span {{
+    color:{primary}; opacity:0.6;
+    font-size:11px; letter-spacing:0.06em;
+  }}
   .save-cue {{
     position:absolute; bottom:76px; left:50%; transform:translateX(-50%);
     border:1px solid rgba({rgb_primary},0.38);
@@ -936,6 +965,7 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
   <div class="fomo-label">&#8212; SAVE THIS &#8212;</div>
   <div class="headline">{_e(headline)}</div>
   {benefit_block}
+  {meta_block}
   <div class="save-cue">&#8659; 지금 저장하세요</div>
   <div class="footer">{_e(brand_name)}</div>
 </div></body></html>"""
