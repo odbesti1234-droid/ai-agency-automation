@@ -36,6 +36,24 @@ _GRAPH_BASE = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
 
 _INSIGHT_METRICS = "impressions,reach,saved,shares,likes,comments"
 
+# 영구 에러 — retry해도 같은 결과. analytics_collected=true로 마킹해서 다음 cron이 다시 잡지 않게.
+# 이걸 안 하면 publisher와 같은 IG 앱 토큰 budget을 매 2시간마다 잠식해서 publish rate limit이 회복 못 함.
+_PERMANENT_ERROR_PATTERNS = (
+    "(#10)",  # Application does not have permission
+    "(#100)",  # Invalid parameter
+    "does not exist",
+    "cannot be loaded due to missing permissions",
+    "Object with ID",  # "Object with ID '...' does not exist..."
+    "Unsupported get request",
+)
+
+
+def _is_permanent_error(msg: str) -> bool:
+    if not msg:
+        return False
+    low = msg.lower()
+    return any(p.lower() in low for p in _PERMANENT_ERROR_PATTERNS)
+
 
 def _fetch_ig_insights(ig_post_id: str, access_token: str) -> dict[str, Any]:
     """IG Graph API /media/{id}/insights 호출 → 지표 딕셔너리 반환."""
@@ -71,6 +89,7 @@ def collect_due() -> list[dict]:
             f"{db._base}/content_ideas",
             params={
                 "select": "id,client_id,ig_post_id,hook,published_at",
+                "status": "eq.published",  # cancelled/failed의 ig_post_id 조회 차단 — 영구 #10 에러로 IG API budget 잠식
                 "analytics_due_at": f"lte.{now_iso}",
                 "analytics_collected": "eq.false",
                 "ig_post_id": "not.is.null",
@@ -144,8 +163,23 @@ def collect_due() -> list[dict]:
                 results.append({"idea_id": idea_id, "status": "collected", "metrics": metrics})
 
             except Exception as e:
-                print(f"  [FAIL] {idea_id[:8]}: {e}")
-                results.append({"idea_id": idea_id, "status": "error", "error": str(e)})
+                err_msg = str(e)
+                # 영구 에러면 analytics_collected=true 마킹 → 다음 cron이 다시 잡지 않음.
+                # IG 앱 토큰을 publisher와 공유하므로 무의미한 retry 차단이 publish budget 회복에 직결.
+                if _is_permanent_error(err_msg):
+                    try:
+                        db.update(
+                            "content_ideas",
+                            filters={"id": idea_id},
+                            patch={"analytics_collected": True},
+                        )
+                        print(f"  [PERM-ERR] {idea_id[:8]}: {err_msg[:80]} — analytics_collected=true 마킹")
+                    except Exception as upd_err:
+                        print(f"  [PERM-ERR] {idea_id[:8]}: 마킹 실패 — {upd_err}")
+                    results.append({"idea_id": idea_id, "status": "permanent_error", "error": err_msg})
+                else:
+                    print(f"  [FAIL] {idea_id[:8]}: {err_msg}")
+                    results.append({"idea_id": idea_id, "status": "error", "error": err_msg})
 
             time.sleep(1)  # API rate limit 방지
 
