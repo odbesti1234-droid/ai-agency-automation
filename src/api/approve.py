@@ -542,6 +542,77 @@ async def create_lead_magnet(req: LeadMagnetRequest) -> dict:
     return {"status": "started", "detail": result_holder.get("error", "processing")}
 
 
+# ─────────────────────────────────────────────────────────────────
+# 5신호 후보 선택 게이트 (Phase 1-2)
+
+def make_topic_select_url(idea_id: str) -> str:
+    """topic-select용 URL (action='select' 고정)."""
+    base = os.environ.get("APPROVAL_BASE_URL", "").rstrip("/")
+    token = _make_token(idea_id, "select")
+    return f"{base}/topic-select?idea_id={idea_id}&token={token}"
+
+
+@app.get("/topic-select", response_class=HTMLResponse)
+async def topic_select(
+    idea_id: str = Query(...),
+    token: str = Query(...),
+) -> HTMLResponse:
+    """5후보 중 1개 선택 → status 'topic_proposed' → 'topic_selected'.
+
+    같은 클라이언트의 다른 topic_proposed 후보는 모두 'cancelled'로 자동 처리 (자기선별).
+    """
+    if not _SECRET:
+        raise HTTPException(status_code=500, detail="APPROVAL_SECRET not configured")
+    if not _verify_token(idea_id, "select", token):
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    db = SupabaseClient()
+    try:
+        rows = db.select("content_ideas", filters={"id": idea_id})
+        if not rows:
+            return HTMLResponse(content=_html_page("없음", "해당 후보를 찾을 수 없습니다.", success=False))
+
+        idea = rows[0]
+        current_status = idea.get("status", "")
+        if current_status == "topic_selected":
+            return HTMLResponse(content=_html_page(
+                "이미 선택됨",
+                "이 주제는 이미 선택되어 콘텐츠 생성 중입니다.",
+                success=True,
+            ))
+        if current_status != "topic_proposed":
+            return HTMLResponse(content=_html_page(
+                "처리 불가",
+                f"이 후보는 '{current_status}' 상태라 선택할 수 없습니다.",
+                success=False,
+            ))
+
+        client_id = idea.get("client_id")
+        cancelled_count = 0
+        if client_id:
+            siblings = db.select(
+                "content_ideas",
+                filters={"client_id": client_id, "status": "topic_proposed"},
+            )
+            for s in siblings:
+                if s["id"] != idea_id:
+                    db.update("content_ideas", filters={"id": s["id"]}, patch={"status": "cancelled"})
+                    cancelled_count += 1
+
+        db.update("content_ideas", filters={"id": idea_id}, patch={
+            "status": "topic_selected",
+            "human_approved": True,
+        })
+
+        return HTMLResponse(content=_html_page(
+            "✅ 선택 완료",
+            f"주제 선택 완료. 콘텐츠 생성을 시작합니다.<br>다른 후보 {cancelled_count}건은 자동 취소되었습니다.",
+            success=True,
+        ))
+    finally:
+        db.close()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.api.approve:app", host="0.0.0.0", port=8000, reload=True)

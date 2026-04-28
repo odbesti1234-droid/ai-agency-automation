@@ -443,6 +443,77 @@ def notify_published(
     return send(text, blocks=blocks, webhook_url=webhook_url)
 
 
+def notify_topic_proposals(
+    client_name: str,
+    candidates: list[dict],
+    webhook_url: str | None = None,
+) -> bool:
+    """5신호 후보 카드 발송 — 사용자가 1개 선택 (5초 게이트).
+
+    candidates: topic_proposer.propose() 반환 dict list. 각 dict는
+    {id, source_type, hook, context, confidence}.
+    """
+    from src.api.approve import make_topic_select_url  # 순환 import 회피
+
+    if not candidates:
+        return False
+
+    text = f"*[{client_name}] 오늘의 주제 후보 {len(candidates)}개 (1개 선택)*"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"[{client_name}] 주제 후보 {len(candidates)}개", "emoji": True},
+        },
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": "1개 선택하면 나머지는 자동 취소됩니다 (5초 게이트)"}],
+        },
+        {"type": "divider"},
+    ]
+
+    source_emoji = {
+        "news": "📰",
+        "trend": "📈",
+        "persona_pain": "💭",
+        "quota": "🎯",
+        "property_db": "🏢",
+    }
+
+    for i, cand in enumerate(candidates, 1):
+        idea_id = cand.get("id", "")
+        src = cand.get("source_type", "?")
+        hook = cand.get("hook", "")
+        context = (cand.get("context", "") or "")[:140]
+        conf = cand.get("confidence", 0)
+        emoji = source_emoji.get(src, "•")
+
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{emoji} {i}. [{src}]* {hook}\n_{context}_  · `confidence={conf}`",
+            },
+        })
+
+        if idea_id:
+            select_url = make_topic_select_url(idea_id)
+            blocks.append({
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "이 주제로 진행", "emoji": True},
+                        "style": "primary",
+                        "url": select_url,
+                    },
+                ],
+            })
+        blocks.append({"type": "divider"})
+
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
 def notify_error(
     client_name: str,
     agent_name: str,

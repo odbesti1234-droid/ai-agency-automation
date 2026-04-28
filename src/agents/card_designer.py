@@ -42,6 +42,7 @@ import httpx
 
 from src.db.client import SupabaseClient
 from src.notifications.slack import notify_design_ready
+from src.utils.client_context import load_client_context
 from src.utils.storage import upload_png
 
 
@@ -1387,6 +1388,7 @@ def run(client_slug: str) -> dict:
         client_id = client_row["id"]
         client_name = client_row.get("name", client_slug)
         brand_voice: dict = client_row.get("brand_voice") or {}
+        client_context: str = load_client_context(client_slug)
         brand_photos: list = client_row.get("brand_photos") or []
         brand_photo_url: str | None = brand_photos[0]["url"] if brand_photos else None
         if brand_photo_url:
@@ -1416,7 +1418,7 @@ def run(client_slug: str) -> dict:
             if not idea.get("slide_script"):
                 try:
                     from src.agents.content_generator import generate_slide_script
-                    idea["slide_script"] = generate_slide_script(idea, brand_voice)
+                    idea["slide_script"] = generate_slide_script(idea, brand_voice, client_context)
                     db_client.update("content_ideas", filters={"id": idea_id}, patch={"slide_script": idea["slide_script"]})
                     print(f"  → slide_script 생성 완료 ({len(idea['slide_script'])}장)")
                 except Exception as e:

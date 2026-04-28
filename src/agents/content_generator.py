@@ -23,6 +23,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from src.db.client import db
+from src.utils.client_context import load_client_context
 from src.utils.embedding import embed
 
 load_dotenv()
@@ -437,7 +438,7 @@ def _check_semantic_duplicate(
         return False
 
 
-def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
+def generate_slide_script(idea: dict, brand_voice: dict, client_context: str = "") -> list[dict]:
     """approved 아이디어 → H-P-I-S-C 유동 슬라이드 스크립트 생성 (5-9장).
 
     instagram-viral Agent 3-B (Caption Architect) + 3-C (Visual Concept Guide) 로직 통합.
@@ -454,6 +455,7 @@ def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
 
     diff_text = "\n".join(f"  - {d}" for d in differentiators[:3]) if differentiators else "  (미설정)"
     palette_text = ", ".join(palette[:4]) if palette else "브랜드 기본 팔레트"
+    context_section = f"\n\n[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}" if client_context else ""
 
     user_message = f"""아이디어 정보:
 - 콘텐츠 유형: {content_type}
@@ -465,7 +467,7 @@ def generate_slide_script(idea: dict, brand_voice: dict) -> list[dict]:
 {diff_text}
 
 브랜드 톤: {tone}
-색상 팔레트: {palette_text}
+색상 팔레트: {palette_text}{context_section}
 
 위 정보를 기반으로 5-9개 슬라이드 카드뉴스 스크립트를 JSON으로 생성하라."""
 
@@ -501,6 +503,7 @@ def generate(
     client = rows[0]
     client_id: str = client["id"]
     brand_voice: dict = client.get("brand_voice", {})
+    client_context: str = load_client_context(client_slug)
 
     # 최근 30일 훅 조회 (rolling cooldown)
     from datetime import timedelta
@@ -578,9 +581,11 @@ def generate(
     ]
     bv_slim = {k: brand_voice[k] for k in _bv_essential_keys if k in brand_voice}
 
+    context_section = f"\n\n[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}" if client_context else ""
+
     user_message = f"""클라이언트: {client['name']} ({client['industry']})
 브랜드 보이스 (핵심):
-{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{feedback_hint}{performance_hint}
+{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{feedback_hint}{performance_hint}{context_section}
 
 {topic_line}
 생성 개수: {actual_count}개{"  (A/B 변주 모드: 정보형 A + 감성형 B)" if ab_variant else ""}"""

@@ -186,6 +186,35 @@ def pending_reminder_job() -> None:
         db_client.close()
 
 
+def topic_proposal_job() -> None:
+    """매일 07:00 KST: 모든 활성 클라이언트에 5신호 후보 제안 + Slack 5카드 발송 (1% 게이트)."""
+    from src.agents.topic_proposer import propose as topic_propose  # noqa: PLC0415
+    from src.notifications.slack import notify_topic_proposals  # noqa: PLC0415
+    from src.db.client import db as _db  # noqa: PLC0415
+
+    now = datetime.now(timezone.utc)
+    print(f"[Cron] topic_proposal_job 시작 — {now.isoformat()}")
+
+    active = _db.select("clients", filters={"is_active": True})
+    proposed_total = 0
+    for client in active:
+        slug = client.get("slug", "")
+        if not slug:
+            continue
+        webhook = client.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
+        try:
+            candidates = _safe_job(f"propose:{slug}", topic_propose, slug)
+            if candidates:
+                notify_topic_proposals(client.get("name", slug), candidates, webhook_url=webhook)
+                proposed_total += len(candidates)
+                print(f"[topic_proposal:{slug}] 후보 {len(candidates)}건 슬랙 발송 완료")
+            else:
+                print(f"[topic_proposal:{slug}] 후보 0건 — 스킵")
+        except Exception as e:
+            print(f"[topic_proposal:{slug}] 실패: {e}")
+    print(f"[Cron] topic_proposal_job 완료 — 총 {proposed_total}건 제안")
+
+
 def _start_api_server() -> None:
     port = int(os.environ.get("PORT", "8000"))
     print(f"[API] 승인 서버 시작 — port {port}")
@@ -201,6 +230,8 @@ def main() -> None:
     weekly_report_utc_hour = _utc_hour_for_kst(18)  # 18:00 KST = 09:00 UTC
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
+    topic_proposal_utc = _utc_hour_for_kst(7)  # 07:00 KST = 22:00 UTC (전날) — 1% 게이트 5후보
+    schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
     schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)  # daily_job 30분 후 리마인더
     schedule.every(30).minutes.do(designer_poll_job)
@@ -210,6 +241,7 @@ def main() -> None:
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
+    print(f"[Cron] topic_proposal — 매일 {topic_proposal_utc:02d}:00 UTC (= KST 07:00) 5신호 후보 제안")
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
     print(f"[Cron] pending_reminder — 매일 {daily_utc:02d}:30 UTC (24h+ 방치 콘텐츠 알림)")
     print("[Cron] designer poll — 30분 간격 (approved → design_ready 자동 체인)")
