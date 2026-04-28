@@ -488,13 +488,23 @@ def _check_semantic_duplicate(
         return False
 
 
-def generate_slide_script(idea: dict, brand_voice: dict, client_context: str = "") -> list[dict]:
+def generate_slide_script(
+    idea: dict,
+    brand_voice: dict,
+    client_context: str = "",
+    max_retries: int = 4,
+) -> list[dict]:
     """approved 아이디어 → H-P-I-S-C 유동 슬라이드 스크립트 생성 (5-9장).
 
     instagram-viral Agent 3-B (Caption Architect) + 3-C (Visual Concept Guide) 로직 통합.
     Returns 5-9 element list with H-P-I-S-C roles: hook, problem, insight (2-5 slides), save, cta
     Each slide contains: slide, role, headline, subtext, visual_direction, emotion_tone, text_content
+
+    Phase 2 evaluator 통합: 1회 생성 → evaluator → fail 시 페널티 피드백 prepend 후 재생성 (max_retries+1 시도).
+    score·iterations·penalties는 idea["_evaluator_meta"]에 inplace 저장 (호출자가 DB persist).
     """
+    from src.agents.evaluator import evaluate_slide_script
+
     hook = idea.get("hook", "")
     caption = idea.get("caption", "")
     content_type = idea.get("content_type", "feed")
@@ -507,7 +517,7 @@ def generate_slide_script(idea: dict, brand_voice: dict, client_context: str = "
     palette_text = ", ".join(palette[:4]) if palette else "브랜드 기본 팔레트"
     context_section = f"\n\n[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}" if client_context else ""
 
-    user_message = f"""아이디어 정보:
+    base_message = f"""아이디어 정보:
 - 콘텐츠 유형: {content_type}
 - 훅 (핵심 메시지): {hook}
 - 캡션 요약: {caption[:300]}
@@ -521,17 +531,43 @@ def generate_slide_script(idea: dict, brand_voice: dict, client_context: str = "
 
 위 정보를 기반으로 5-9개 슬라이드 카드뉴스 스크립트를 JSON으로 생성하라."""
 
-    response = _client.messages.create(
-        model=_MODEL,
-        max_tokens=2000,
-        system=[{"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_message}],
-    )
-    raw = response.content[0].text.strip()
-    slides = _parse_json_response(raw)
-    if not isinstance(slides, list) or not (5 <= len(slides) <= 9):
-        raise ValueError(f"슬라이드 5-9개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
-    return slides
+    last_slides: list[dict] = []
+    last_eval: dict = {}
+    feedback_prefix = ""
+
+    for attempt in range(1, max_retries + 2):  # 1차 + 재시도 max_retries 회 = 최대 5회
+        user_message = (feedback_prefix + "\n\n" + base_message) if feedback_prefix else base_message
+
+        response = _client.messages.create(
+            model=_MODEL,
+            max_tokens=2000,
+            system=[{"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_message}],
+        )
+        raw = response.content[0].text.strip()
+        slides = _parse_json_response(raw)
+        if not isinstance(slides, list) or not (5 <= len(slides) <= 9):
+            # 형식 자체가 깨지면 즉시 raise (페널티 루프로 회복 불가)
+            raise ValueError(f"슬라이드 5-9개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
+
+        last_slides = slides
+        last_eval = evaluate_slide_script(slides)
+        last_eval["attempt"] = attempt
+
+        if last_eval["passed"]:
+            break
+
+        # 다음 시도용 페널티 피드백 prepend
+        feedback_prefix = last_eval["iterations_hint"]
+
+    # 결과 메타 inplace 저장 (호출자가 DB persist)
+    idea["_evaluator_meta"] = {
+        "score": last_eval.get("score", 0),
+        "passed": last_eval.get("passed", False),
+        "iterations": last_eval.get("attempt", 1),
+        "penalties": last_eval.get("penalties", []),
+    }
+    return last_slides
 
 
 def generate(
