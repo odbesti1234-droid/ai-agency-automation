@@ -836,15 +836,15 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     margin-bottom:28px; max-width:880px;
   }}
   .data-box {{
-    border:1px solid rgba({rgb},0.3);
-    padding:26px 30px;
-    background:rgba({rgb},0.09);
+    border:1px solid rgba({rgb},0.32);
+    padding:30px 34px;
+    background:rgba({rgb},0.10);
     border-radius:4px;
     max-width:860px;
   }}
   .data-text {{
-    font-size:23px; font-weight:300; color:{on_primary};
-    opacity:0.75; line-height:1.7;
+    font-size:26px; font-weight:400; color:{on_primary};
+    opacity:0.86; line-height:1.62;
   }}
   .footer {{
     position:absolute; bottom:56px; left:80px;
@@ -878,18 +878,21 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
 def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palette: dict) -> str:
     accent = palette["accent"]
     primary = palette["primary"]
-    on_accent = palette["on_accent"]
-    rgb_primary = _hex_to_rgb(primary)
+    on_primary = palette["on_primary"]
+    rgb_accent = _hex_to_rgb(accent)
+    rgb_on_primary = _hex_to_rgb(on_primary)
 
     headline = slide.get("headline", "이 카드 저장하면 얻는 것")
     subtext = slide.get("subtext", "") or slide.get("text_content", "") or ""
-    dots_html = _make_dots(total, slide_num, primary)
+    dots_html = _make_dots(total, slide_num, accent)
 
     hl_fs = 52 if len(headline) <= 16 else (44 if len(headline) <= 22 else 36)
 
+    # save 슬라이드: 다른 슬라이드들과 동일한 primary 다크 배경 — color_consistency 유지
+    # 차별화는 accent 컬러 강조 요소(상단·좌우 라인, 북마크 아이콘 stroke)로 처리
     bookmark_svg = (
-        f'<svg viewBox="0 0 48 48" fill="none" stroke="{primary}" stroke-width="2" '
-        f'stroke-linecap="round" stroke-linejoin="round" style="opacity:0.8;">'
+        f'<svg viewBox="0 0 48 48" fill="none" stroke="{accent}" stroke-width="2.4" '
+        f'stroke-linecap="round" stroke-linejoin="round" style="opacity:0.95;">'
         f'<path d="M10 4h28v40l-14-10L10 44V4z"/></svg>'
     )
 
@@ -912,54 +915,68 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
 {_BASE_CSS}
   .wrap {{
     width:1080px; height:1080px; position:relative;
-    background:{accent};
+    background:linear-gradient(180deg, {primary} 0%, #0E1320 100%);
     display:flex; flex-direction:column;
     align-items:center; justify-content:center;
     padding:0 90px; gap:0;
+    overflow:hidden;
   }}
+  /* 상단 accent 띠 — save 슬라이드 시각 시그니처 */
+  .top-band {{
+    position:absolute; top:0; left:0; right:0; height:5px;
+    background:linear-gradient(90deg, transparent 0%, {accent} 50%, transparent 100%);
+  }}
+  /* 좌우 accent 코너 라인 (다른 본문 슬라이드와 일관된 코너 디자인 언어) */
+  .corner {{ position:absolute; width:32px; height:32px; }}
+  .corner.tl {{ top:40px; left:40px; border-top:2px solid {accent}; border-left:2px solid {accent}; opacity:0.6; }}
+  .corner.tr {{ top:40px; right:40px; border-top:2px solid {accent}; border-right:2px solid {accent}; opacity:0.6; }}
+  .corner.bl {{ bottom:40px; left:40px; border-bottom:2px solid {accent}; border-left:2px solid {accent}; opacity:0.6; }}
+  .corner.br {{ bottom:40px; right:40px; border-bottom:2px solid {accent}; border-right:2px solid {accent}; opacity:0.6; }}
   .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
   .save-icon {{ width:80px; height:80px; margin-bottom:28px; }}
   .fomo-label {{
-    font-size:13px; font-weight:300; color:{primary};
+    font-size:13px; font-weight:300; color:{accent};
     letter-spacing:7px; text-transform:uppercase;
-    opacity:0.55; text-align:center; margin-bottom:18px;
+    opacity:0.85; text-align:center; margin-bottom:18px;
   }}
   .headline {{
     font-family:'Noto Serif KR','Malgun Gothic',serif;
     font-size:{hl_fs}px; font-weight:700;
-    color:{primary}; line-height:1.35;
+    color:{on_primary}; line-height:1.35;
     text-align:center; margin-bottom:28px; max-width:860px;
   }}
   .benefit {{
-    font-size:24px; font-weight:400; color:{primary};
-    opacity:0.65; text-align:center; line-height:1.6;
+    font-size:24px; font-weight:400; color:{on_primary};
+    opacity:0.7; text-align:center; line-height:1.6;
     max-width:760px; margin-bottom:0;
   }}
   .meta-source {{
     margin-top:24px;
     display:inline-block;
     padding:6px 14px;
-    border:1px solid rgba({rgb_primary},0.35);
+    border:1px solid rgba({rgb_accent},0.5);
   }}
   .meta-source span {{
-    color:{primary}; opacity:0.6;
+    color:{accent}; opacity:0.85;
     font-size:11px; letter-spacing:0.06em;
   }}
   .save-cue {{
     position:absolute; bottom:76px; left:50%; transform:translateX(-50%);
-    border:1px solid rgba({rgb_primary},0.38);
-    padding:10px 32px;
-    font-size:12px; font-weight:300; color:{primary};
+    background:{accent};
+    padding:12px 36px;
+    font-size:12px; font-weight:600; color:{_text_color_for(accent)};
     letter-spacing:5px; text-transform:uppercase; white-space:nowrap;
-    opacity:0.7;
   }}
   .footer {{
     position:absolute; bottom:52px; left:80px;
-    font-size:12px; font-weight:300; color:{primary}; opacity:0.3;
+    font-size:12px; font-weight:300; color:{on_primary}; opacity:0.3;
     letter-spacing:4px; text-transform:uppercase;
   }}
 </style></head>
 <body><div class="wrap">
+  <div class="top-band"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
   <div class="dots">{dots_html}</div>
   <div class="save-icon">{bookmark_svg}</div>
   <div class="fomo-label">&#8212; SAVE THIS &#8212;</div>
