@@ -1573,6 +1573,7 @@ def run(client_slug: str) -> dict:
             print(f"  → {total_slides}장 슬라이드 생성 (커버 + 핵심포인트 + CTA)")
 
             slide_urls: list[str] = []
+            slide_pngs: list[bytes] = []  # Phase 2 v2 vision 평가용 (성공한 슬라이드 PNG bytes)
 
             for s_idx, slide_html in enumerate(slides_html):
                 slide_label = ["커버", *[f"포인트{i}" for i in range(1, total_slides - 1)], "CTA"][s_idx] if s_idx < total_slides else f"슬라이드{s_idx+1}"
@@ -1589,6 +1590,7 @@ def run(client_slug: str) -> dict:
                         url = upload_png(png_bytes, slide_path)
                         print(f"  → [{s_idx+1}/{total_slides}] 업로드 완료 → {url}")
                         slide_urls.append(url)
+                        slide_pngs.append(png_bytes)
                         break
 
                     except Exception as e:
@@ -1634,6 +1636,23 @@ def run(client_slug: str) -> dict:
             except Exception as e:
                 print(f"  → Notion 생성 실패 (비치명적): {e}")
 
+            # Phase 2 v2 — Vision 평가 (관측 모드, 비치명적). idea당 1회만 호출.
+            vision_meta: dict | None = None
+            if slide_pngs:
+                try:
+                    from src.agents.vision_evaluator import evaluate_carousel_design
+                    t_vis = time.time()
+                    vision_meta = evaluate_carousel_design(slide_pngs)
+                    bd = vision_meta.get("breakdown", {})
+                    print(
+                        f"  → Vision 평가: score={vision_meta['score']} "
+                        f"(ws={bd.get('whitespace')} cc={bd.get('color_consistency')} "
+                        f"lg={bd.get('legibility')} vh={bd.get('visual_hierarchy')}) "
+                        f"[{time.time()-t_vis:.1f}s] notes=\"{vision_meta.get('notes', '')[:60]}\""
+                    )
+                except Exception as e:
+                    print(f"  → Vision 평가 실패 (비치명적): {type(e).__name__}: {e}")
+
             _auto = client_row.get("auto_approve", False)
             patch: dict = {
                 "status": "final_approved" if _auto else "design_ready",
@@ -1644,6 +1663,10 @@ def run(client_slug: str) -> dict:
             }
             if notion_url:
                 patch["notion_url"] = notion_url
+            if vision_meta:
+                patch["design_vision_score"] = vision_meta["score"]
+                patch["design_vision_breakdown"] = vision_meta["breakdown"]
+                patch["design_vision_notes"] = vision_meta.get("notes", "")
             db_client.update("content_ideas", filters={"id": idea_id}, patch=patch)
 
             results.append({
