@@ -210,6 +210,24 @@ N+2. cta (1장 고정)
 - save: 브랜드 accent 색 반전 배경, 저장 아이콘 느낌
 - cta: 그라디언트 또는 강렬한 행동 유도 레이아웃
 
+[새 시퀀스 권장 (Phase 1-3-B 단계 도입 — 기존 H-P-I-S-C도 호환)]
+가능하면 새 시퀀스: `cover → hook → tip × N → benchmark → cta`
+- cover (1장): 표지 — 라벨박스 카테고리 + ghost 키워드
+- hook (1장): 후킹 — ghost 큰 숫자 + 헤드라인 + 하단 띠 (저장 유도)
+- tip 1~N: 본문 인사이트 — 라벨박스 (TIP 01·02) + 본문 + (옵션) BAD/GOOD 비교박스 또는 N항목 표
+- benchmark (1장): 근거 — 메타 출처 박스 + N항목 표 (외부 사례·공식 데이터 인용)
+- cta (1장): 행동 — 하단 띠 단일 동사
+
+기존 H-P-I-S-C 출력도 자동으로 dispatch됨 (cover→hook 빌더, tip→insight 빌더, benchmark→save 빌더). 둘 중 하나 선택.
+
+visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
+- `ghost_number`  : 배경 큰 숫자/키워드 (예: "1M", "-2억")
+- `bad_good`      : 좌(BAD) vs 우(GOOD) 비교박스
+- `n_table`       : N항목 표 (각 행 라벨박스 컬러 코딩)
+- `label_box`     : 카테고리 라벨 (TIP01, MARKET INSIGHT, FREE INFO 등)
+- `bottom_band`   : 하단 띠 CTA (단일 행동)
+- `meta_source`   : 출처 박스 (신뢰 신호 — benchmark 슬라이드 의무, "2026.MM.DD KB부동산" 식)
+
 [본문 분해 룰 — 시각 컴포넌트 단위 (필수)]
 client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따른다. 일반 룰:
 - 각 슬라이드의 text_content는 **3줄 이하** 강제 (planb_pm 02~05 빽빽 본문 회피)

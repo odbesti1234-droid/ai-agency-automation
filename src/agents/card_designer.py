@@ -1095,6 +1095,97 @@ def _slide_cta(brand_name: str, palette: dict, cta_text: str, total: int) -> str
 
 
 # ─────────────────────────────────────────────────────────────────
+# 시각 컴포넌트 6종 (Phase 1-3-B 1단계 — 짐코딩 패턴 추출)
+# 재사용 가능 함수. card_designer 슬라이드 빌더에서 호출 또는 LLM의 visual_direction 명시 시 dispatch.
+# 관련: ~/.claude/clients/{slug}/context/visual-components-catalog.md
+# ─────────────────────────────────────────────────────────────────
+
+def _component_ghost_number(text: str, palette: dict) -> str:
+    """배경에 회색 큰 숫자/키워드 (예: "1M", "-2억", "TIP 02"). 슬라이드 역할 즉시 인식."""
+    accent = palette.get("accent", "#C9A876")
+    return (
+        f'<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);'
+        f' font-size:280px; font-weight:900; color:rgba({_hex_to_rgb(accent)},0.08);'
+        f' white-space:nowrap; pointer-events:none; z-index:1;'
+        f' font-family:\'Noto Serif KR\', serif;">{_e(text)}</div>'
+    )
+
+
+def _component_bad_good(bad_label: str, bad_text: str, good_label: str, good_text: str, palette: dict) -> str:
+    """좌(BAD) vs 우(GOOD) 비교박스. mood가 premium/luxury면 다크그레이/골드, 아니면 다크레드/다크그린."""
+    mood = (palette.get("mood") or "").lower()
+    if "premium" in mood or "luxury" in mood:
+        bad_bg, good_bg = "#3a3a3a", palette.get("secondary", "#C9A876")
+    else:
+        bad_bg, good_bg = "#8B3A3A", "#3A8B5C"
+    bad_text_color = _text_color_for(bad_bg)
+    good_text_color = _text_color_for(good_bg)
+    return (
+        f'<div style="display:flex; gap:16px; margin:24px 0;">'
+        f'<div style="flex:1; background:{bad_bg}; padding:20px; border-radius:4px;">'
+        f'<div style="font-size:14px; opacity:0.7; color:{bad_text_color}; margin-bottom:8px;">✗ {_e(bad_label)}</div>'
+        f'<div style="font-size:18px; line-height:1.4; color:{bad_text_color};">{_e(bad_text)}</div></div>'
+        f'<div style="flex:1; background:{good_bg}; padding:20px; border-radius:4px;">'
+        f'<div style="font-size:14px; opacity:0.7; color:{good_text_color}; margin-bottom:8px;">✓ {_e(good_label)}</div>'
+        f'<div style="font-size:18px; line-height:1.4; color:{good_text_color};">{_e(good_text)}</div></div>'
+        f'</div>'
+    )
+
+
+def _component_n_table(rows: list[dict], palette: dict) -> str:
+    """N항목 표. 각 row = {"label": "TIP01", "text": "..."}. 최대 7행."""
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    items_html = ""
+    for row in rows[:7]:
+        label = row.get("label", "")
+        text = row.get("text", "")
+        items_html += (
+            f'<tr><td style="padding:12px 16px; vertical-align:top; width:90px;">'
+            f'<span style="display:inline-block; padding:4px 8px; border:1px solid {accent}; color:{accent};'
+            f' font-size:11px; font-weight:600;">{_e(label)}</span></td>'
+            f'<td style="padding:12px 16px; color:{on_primary}; font-size:16px; line-height:1.5;">{_e(text)}</td></tr>'
+        )
+    return f'<table style="width:100%; border-collapse:collapse; margin:24px 0;"><tbody>{items_html}</tbody></table>'
+
+
+def _component_label_box(text: str, palette: dict, fill: bool = False) -> str:
+    """카테고리 라벨박스. fill=True 면 배경 채움(fit_ai_founder), False 면 외곽선만(planb_pm)."""
+    accent = palette.get("accent", "#C9A876")
+    if fill:
+        return (
+            f'<span style="display:inline-block; padding:6px 14px; background:{accent};'
+            f' color:{_text_color_for(accent)}; font-size:12px; font-weight:700; letter-spacing:0.08em;">{_e(text)}</span>'
+        )
+    return (
+        f'<span style="display:inline-block; padding:6px 14px; border:1px solid {accent};'
+        f' color:{accent}; font-size:12px; font-weight:600; letter-spacing:0.08em;">{_e(text)}</span>'
+    )
+
+
+def _component_bottom_band_cta(text: str, palette: dict) -> str:
+    """하단 띠 CTA — 단일 행동 강조. 슬라이드 빌더에서 position:relative 컨테이너 안에 위치 가정."""
+    accent = palette.get("accent", "#C9A876")
+    return (
+        f'<div style="position:absolute; bottom:0; left:0; right:0; background:{accent};'
+        f' padding:18px 32px; text-align:center;">'
+        f'<span style="color:{_text_color_for(accent)}; font-size:18px; font-weight:700; letter-spacing:0.04em;">{_e(text)}</span>'
+        f'</div>'
+    )
+
+
+def _component_meta_source(source: str, date: str, palette: dict) -> str:
+    """메타 출처 박스 — 신뢰 신호 (benchmark 슬라이드 의무)."""
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    return (
+        f'<div style="display:inline-block; padding:6px 12px;'
+        f' border:1px solid rgba({_hex_to_rgb(on_primary)},0.3); margin:16px 0;">'
+        f'<span style="color:{on_primary}; opacity:0.6; font-size:11px; letter-spacing:0.05em;">'
+        f'{_e(date)} · {_e(source)}</span></div>'
+    )
+
+
+# ─────────────────────────────────────────────────────────────────
 # Story 단일 슬라이드 HTML 생성
 # ─────────────────────────────────────────────────────────────────
 
@@ -1144,8 +1235,13 @@ def generate_carousel_html(
         total = len(slide_script)
         insight_counter = 0
 
+        # role alias — 새 시퀀스(cover→hook→tip×N→benchmark→cta) 지원
+        # cover→hook 빌더, tip→insight 빌더, benchmark→save 빌더로 매핑 (Phase 1-3-B 1단계, 회귀 X)
+        _ROLE_ALIAS = {"cover": "hook", "tip": "insight", "benchmark": "save"}
+
         for idx, slide_obj in enumerate(slide_script):
             role = slide_obj.get("role", "").lower()
+            role = _ROLE_ALIAS.get(role, role)
             position = idx + 1
 
             if role == "hook":
