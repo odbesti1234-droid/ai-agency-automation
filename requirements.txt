@@ -9,7 +9,12 @@ fastapi>=0.115.0
 uvicorn>=0.32.0
 playwright>=1.45.0
 sentence-transformers>=3.0.0
+pytrends>=4.9.0
+urllib3<2  # pytrends 4.9.x 호환 (urllib3 v2의 method_whitelist 제거 이슈)
+beautifulsoup4>=4.12.0
 # 주: supabase-py는 Python 3.14에서 pyiceberg 빌드 이슈가 있어 제외.
 # Supabase는 httpx로 REST API 직접 호출 (src/db/client.py).
 # Playwright: HTML→PNG 렌더링 (카드뉴스 이미지 생성).
 # sentence-transformers: 로컬 임베딩 생성 (pgvector 의미적 중복 제거)
+# pytrends: Google Trends 검색 트렌드 다중화 (Phase 1-1 trend 보강).
+# beautifulsoup4: 네이버 부동산 크롤링 HTML 파싱 (Phase 1-1-A 매물 DB).
