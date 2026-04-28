@@ -186,6 +186,56 @@ def pending_reminder_job() -> None:
         db_client.close()
 
 
+def topic_selected_poll_job() -> None:
+    """status=topic_selected 발견 → content_generator.generate(topic=hook) 호출.
+
+    1% 게이트 흐름의 마지막 연결: 사용자가 슬랙 5카드 중 1개 선택 → topic_selected →
+    여기서 content_generator로 풀 콘텐츠 생성 (status=approved로 자동 승인 — 사람 1번 클릭으로 끝).
+    원본 topic_selected row는 status='topic_processed'로 표시 (역사 보존).
+    """
+    from src.db.client import db as _db  # noqa: PLC0415
+    from src.agents.content_generator import generate as content_gen  # noqa: PLC0415
+
+    now = datetime.now(timezone.utc)
+    selected = _db.select("content_ideas", filters={"status": "topic_selected"}, limit=10)
+    if not selected:
+        return  # 조용히 스킵 (10분마다 도는 잡)
+
+    print(f"[Cron] topic_selected_poll 시작 — {len(selected)}건 처리")
+    for idea in selected:
+        idea_id = idea["id"]
+        client_id = idea["client_id"]
+        hook = idea.get("hook", "")
+        source_type = idea.get("source_type")
+        try:
+            clients = _db.select("clients", filters={"id": client_id})
+            if not clients:
+                _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": "client not found"})
+                continue
+            slug = clients[0].get("slug", "")
+
+            # 새 콘텐츠 생성 (status=pending으로 insert됨)
+            new_ideas = content_gen(client_slug=slug, topic=hook, count=1)
+            if not new_ideas:
+                _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": "content_generator returned 0"})
+                continue
+
+            # 새 row를 status=approved로 자동 승인 (1% 게이트: 사람 클릭 1번으로 끝)
+            # source_type 전파 (어느 신호 출처인지 추적)
+            for ni in new_ideas:
+                patch = {"status": "approved", "human_approved": True}
+                if source_type:
+                    patch["source_type"] = source_type
+                _db.update("content_ideas", filters={"id": ni["id"]}, patch=patch)
+
+            # 원본 topic_selected → topic_processed (역사 보존)
+            _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "topic_processed"})
+            print(f"[topic_selected_poll:{idea_id[:8]}] ✅ 변환 → {len(new_ideas)}건 approved (slug={slug})")
+        except Exception as e:
+            print(f"[topic_selected_poll:{idea_id[:8]}] ❌ 실패: {e}")
+            _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": str(e)[:500]})
+
+
 def topic_proposal_job() -> None:
     """매일 07:00 KST: 모든 활성 클라이언트에 5신호 후보 제안 + Slack 5카드 발송 (1% 게이트)."""
     from src.agents.topic_proposer import propose as topic_propose  # noqa: PLC0415
@@ -232,6 +282,7 @@ def main() -> None:
 
     topic_proposal_utc = _utc_hour_for_kst(7)  # 07:00 KST = 22:00 UTC (전날) — 1% 게이트 5후보
     schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
+    schedule.every(10).minutes.do(topic_selected_poll_job)  # 사용자 슬랙 선택 → content_generator 자동 트리거
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
     schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)  # daily_job 30분 후 리마인더
     schedule.every(30).minutes.do(designer_poll_job)
@@ -242,6 +293,7 @@ def main() -> None:
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
     print(f"[Cron] topic_proposal — 매일 {topic_proposal_utc:02d}:00 UTC (= KST 07:00) 5신호 후보 제안")
+    print("[Cron] topic_selected_poll — 10분 간격 (사용자 슬랙 선택 → content_generator 자동 트리거)")
     print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
     print(f"[Cron] pending_reminder — 매일 {daily_utc:02d}:30 UTC (24h+ 방치 콘텐츠 알림)")
     print("[Cron] designer poll — 30분 간격 (approved → design_ready 자동 체인)")
