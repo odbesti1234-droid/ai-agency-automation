@@ -444,7 +444,7 @@ def _check_semantic_duplicate(
     client_id: str,
     hook: str,
     caption: str,
-    similarity_threshold: float = 0.85,
+    similarity_threshold: float = 0.92,  # 0.85→0.92로 완화. 같은 도메인(부동산·AI마케팅) 콘텐츠가 자연스럽게 0.85+ 나와 정상 콘텐츠 차단 → false positive 빈번. 0.92는 거의 동일 caption만 차단
 ) -> bool:
     """훅 + 캡션을 결합해 임베딩 생성 후 pgvector로 의미적 중복 검사.
 
@@ -737,6 +737,7 @@ def generate(
             # 의미적 중복 검사 (semantic deduplication)
             if _check_semantic_duplicate(client_id, hook, caption):
                 print(f"[SKIP] 의미적 중복 감지: {hook[:50]}...")
+                idea["_skipped_dedup"] = True  # 호출자(cron topic_selected_poll)에서 'id' 없는 entry 식별용
                 continue
 
             # 임베딩 생성 (content_embedding 저장)

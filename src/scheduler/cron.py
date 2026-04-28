@@ -216,13 +216,19 @@ def topic_selected_poll_job() -> None:
 
             # 새 콘텐츠 생성 (status=pending으로 insert됨)
             new_ideas = content_gen(client_slug=slug, topic=hook, count=1)
-            if not new_ideas:
-                _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": "content_generator returned 0"})
+            # _skipped_dedup이 박힌 idea는 DB insert 안 됐으므로 제외
+            saved_ideas = [ni for ni in (new_ideas or []) if ni.get("id") and not ni.get("_skipped_dedup")]
+            if not saved_ideas:
+                _db.update(
+                    "content_ideas",
+                    filters={"id": idea_id},
+                    patch={"status": "failed", "last_error": "content_generator returned 0 (all dedup skipped or generation empty)"},
+                )
                 continue
 
             # 새 row를 status=approved로 자동 승인 (1% 게이트: 사람 클릭 1번으로 끝)
             # source_type 전파 (어느 신호 출처인지 추적)
-            for ni in new_ideas:
+            for ni in saved_ideas:
                 patch = {"status": "approved", "human_approved": True}
                 if source_type:
                     patch["source_type"] = source_type
@@ -230,7 +236,7 @@ def topic_selected_poll_job() -> None:
 
             # 원본 topic_selected → topic_processed (역사 보존)
             _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "topic_processed"})
-            print(f"[topic_selected_poll:{idea_id[:8]}] ✅ 변환 → {len(new_ideas)}건 approved (slug={slug})")
+            print(f"[topic_selected_poll:{idea_id[:8]}] ✅ 변환 → {len(saved_ideas)}건 approved (slug={slug})")
         except Exception as e:
             print(f"[topic_selected_poll:{idea_id[:8]}] ❌ 실패: {e}")
             _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": str(e)[:500]})
