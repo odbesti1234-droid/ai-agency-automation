@@ -151,21 +151,31 @@ def fetch(client_slug: str) -> dict:
         _strategy_mode = _brand_voice_local.get("content_strategy", {}).get("mode", "lead_magnet")
         _is_authority = _strategy_mode == "authority"
 
+        # 출력 형식 강제 — 직전 버그(마크다운 헤더 + incomplete output)로 confidence=0 대량 발생.
+        # 한 단락·평문·구체 수치 명시.
+        _format_strict = (
+            "출력 형식 (반드시 준수):\n"
+            "- 마크다운 금지 (제목 헤더·불릿·굵게 모두 X)\n"
+            "- 한 단락 평문\n"
+            "- 다음 4가지 모두 포함: 기사 제목 / 발표일(YYYY-MM-DD 또는 YYYY년 M월) / 출처 / 핵심 수치 1개 이상\n"
+            "- 200자 내외 권장, 250자 이내 강제"
+        )
+
         _pass1_system = (
             "너는 부동산 시장 데이터 분석가다. 주어진 키워드로 KB부동산·한국부동산원·국토부 등 "
             "공식 기관의 확인된 통계·실거래가·매매지수 데이터 1건을 찾아라. "
             "기관명, 발표 날짜, 구체적 수치(가격·등락률·거래량)를 빠짐없이 요약해라. "
-            "공식 데이터를 찾지 못하면 '없음'이라고만 써라."
+            "공식 데이터를 찾지 못하면 '없음'이라고만 써라.\n\n" + _format_strict
             if _is_authority else
             "너는 뉴스 검색 도우미다. 주어진 키워드로 가장 최신·구체적인 뉴스 1건을 찾아라. "
             "기사 제목, 날짜, 출처, 핵심 내용(수치·기능명 포함)을 빠짐없이 요약해라. "
-            "찾은 내용이 없으면 '없음'이라고만 써라."
+            "찾은 내용이 없으면 '없음'이라고만 써라.\n\n" + _format_strict
         )
 
-        # Pass 1 — 웹 검색 (최대 2회 검색)
+        # Pass 1 — 웹 검색 (최대 2회 검색). max_tokens 700→1500 (search 도구 호출 + 요약 분리).
         pass1 = _client.messages.create(
             model=_MODEL,
-            max_tokens=700,
+            max_tokens=1500,
             system=_pass1_system,
             tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 2}],
             messages=[{
@@ -173,16 +183,22 @@ def fetch(client_slug: str) -> dict:
                 "content": (
                     f"오늘 날짜: {today}\n"
                     f"검색어: {search_q}\n\n"
-                    "가장 최신 뉴스 1건의 제목, 날짜, 출처, 핵심 내용(수치 포함)을 200자 이내로 요약해라."
+                    "가장 최신 뉴스 1건을 찾아 한 단락 평문(마크다운 금지)으로 250자 이내 요약하라. "
+                    "제목·날짜·출처·핵심 수치 4가지 모두 포함."
                 ),
             }],
         )
 
+        # web_search 도구 사용 시 응답 구조: [text(intro), tool_use, tool_result, text(final), ...]
+        # 첫 text는 보통 "검색하겠습니다" 같은 안내 — 가장 긴 text block을 진짜 요약으로 사용
         search_summary = ""
-        for block in pass1.content:
-            if hasattr(block, "text") and block.text.strip():
-                search_summary = block.text.strip()
-                break
+        text_blocks = [
+            block.text.strip()
+            for block in pass1.content
+            if hasattr(block, "text") and block.text.strip()
+        ]
+        if text_blocks:
+            search_summary = max(text_blocks, key=len)
 
         if not search_summary or search_summary == "없음":
             print(f"[{client_name}] 실제 뉴스 없음 — 트렌드 기반으로 폴백")

@@ -260,6 +260,42 @@ def _get_week_stats(db: SupabaseClient, client_id: str) -> dict:
         ct = idea.get("content_type", "unknown")
         content_type_counts[ct] = content_type_counts.get(ct, 0) + 1
 
+    # Phase 3-1: 디자인 점수 트렌드 (slide_script + carousel 생성된 idea 한정)
+    designed = [r for r in recent if r.get("design_url")]
+    text_scores = [r["design_quality_score"] for r in designed if r.get("design_quality_score") is not None]
+    vision_scores = [r["design_vision_score"] for r in designed if r.get("design_vision_score") is not None]
+    iterations_list = [r["evaluation_iterations"] for r in designed if r.get("evaluation_iterations") is not None]
+
+    # 페널티 룰 빈도 집계
+    penalty_counts: dict[str, int] = {}
+    for r in designed:
+        penalties = r.get("slop_penalty") or []
+        for p in penalties:
+            rule = p.get("rule", "unknown") if isinstance(p, dict) else "unknown"
+            penalty_counts[rule] = penalty_counts.get(rule, 0) + 1
+
+    # Vision 4기준 평균
+    vision_breakdown_avg: dict[str, float] = {}
+    breakdowns = [r["design_vision_breakdown"] for r in designed if r.get("design_vision_breakdown")]
+    if breakdowns:
+        for key in ("whitespace", "color_consistency", "legibility", "visual_hierarchy"):
+            vals = [bd.get(key) for bd in breakdowns if isinstance(bd, dict) and bd.get(key) is not None]
+            if vals:
+                vision_breakdown_avg[key] = round(sum(vals) / len(vals), 1)
+
+    def _avg(xs: list) -> float | None:
+        return round(sum(xs) / len(xs), 1) if xs else None
+
+    design_trend = {
+        "designed_count": len(designed),
+        "text_score_avg": _avg(text_scores),
+        "vision_score_avg": _avg(vision_scores),
+        "iterations_avg": _avg(iterations_list),
+        "iterations_max": max(iterations_list) if iterations_list else None,
+        "vision_breakdown_avg": vision_breakdown_avg,
+        "top_penalties": sorted(penalty_counts.items(), key=lambda x: -x[1])[:3],
+    }
+
     return {
         "total": len(recent),
         "by_status": status_counts,
@@ -269,6 +305,7 @@ def _get_week_stats(db: SupabaseClient, client_id: str) -> dict:
         "approved": status_counts.get("approved", 0),
         "rejected": status_counts.get("rejected", 0),
         "pending": status_counts.get("pending", 0),
+        "design_trend": design_trend,
     }
 
 
@@ -302,6 +339,32 @@ def _format_slack_report(client_name: str, stats: dict, week_label: str, ig_stat
         lines.append("콘텐츠 타입별:")
         for ct, cnt in stats["by_content_type"].items():
             lines.append(f"  {ct}: {cnt}개")
+
+    # Phase 3-1: 디자인 점수 트렌드
+    dt = stats.get("design_trend") or {}
+    if dt.get("designed_count"):
+        lines.append("")
+        lines.append("*디자인 점수 트렌드 (Phase 2 evaluator)*")
+        lines.append(f"  생성된 캐러셀: {dt['designed_count']}개")
+        if dt.get("text_score_avg") is not None:
+            lines.append(f"  텍스트 평가 v1 평균: *{dt['text_score_avg']}*/100")
+        if dt.get("vision_score_avg") is not None:
+            lines.append(f"  비전 평가 v2 평균: *{dt['vision_score_avg']}*/100")
+        if dt.get("iterations_avg") is not None:
+            iters_max = dt.get("iterations_max")
+            iters_max_str = f" (최대 {iters_max}회)" if iters_max else ""
+            lines.append(f"  LLM 재생성 평균: {dt['iterations_avg']}회{iters_max_str}")
+        bd = dt.get("vision_breakdown_avg") or {}
+        if bd:
+            lines.append(
+                f"  비전 4기준 평균: ws={bd.get('whitespace','-')} "
+                f"cc={bd.get('color_consistency','-')} "
+                f"lg={bd.get('legibility','-')} "
+                f"vh={bd.get('visual_hierarchy','-')}"
+            )
+        if dt.get("top_penalties"):
+            penalty_names = ", ".join(f"{r}({c})" for r, c in dt["top_penalties"])
+            lines.append(f"  최빈 페널티: {penalty_names}")
 
     return "\n".join(lines)
 

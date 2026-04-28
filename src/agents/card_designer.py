@@ -61,6 +61,12 @@ _GOOGLE_FONTS_URL = (
 _BASE_CSS = f"""
   @import url('{_GOOGLE_FONTS_URL}');
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  /* 한국어 줄바꿈 — 단어 단위(어절)로만 잘리게. 글자 단위로 어색하게 끊기는 현상 차단 */
+  body, body * {{
+    word-break: keep-all;
+    overflow-wrap: break-word;
+    line-break: strict;
+  }}
   body {{
     width: 1080px; height: 1080px; overflow: hidden;
     font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕',
@@ -837,14 +843,15 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
   }}
   .data-box {{
     border:1px solid rgba({rgb},0.32);
-    padding:30px 34px;
+    padding:40px 44px;
     background:rgba({rgb},0.10);
     border-radius:4px;
-    max-width:860px;
+    max-width:840px;
   }}
   .data-text {{
-    font-size:26px; font-weight:400; color:{on_primary};
-    opacity:0.86; line-height:1.62;
+    font-size:30px; font-weight:400; color:{on_primary};
+    opacity:0.92; line-height:1.7;
+    letter-spacing:0.005em;
   }}
   .footer {{
     position:absolute; bottom:56px; left:80px;
