@@ -58,6 +58,20 @@ def _is_rate_limit_error(msg: str) -> bool:
     return any(p.lower() in low for p in _RATE_LIMIT_PATTERNS)
 
 
+# IG container expires ~24h. 보수적으로 22h 후엔 stale로 간주하고 재생성.
+_CONTAINER_TTL_HOURS = 22
+
+# Rate limit backoff: 30m → 60m → 120m → 240m(4h cap).
+# 매 cron마다 8 API call 낭비를 차단하면서도 자연 해소 시간 확보.
+_BACKOFF_MINUTES = (30, 60, 120, 240)
+
+
+def _next_retry_delay_minutes(retry_count: int) -> int:
+    """retry_count(이미 발생한 실패 횟수)에 따라 다음 backoff 분 반환."""
+    idx = min(retry_count, len(_BACKOFF_MINUTES) - 1)
+    return _BACKOFF_MINUTES[idx]
+
+
 # ─────────────────────────────────────────────────────────────────
 # Instagram Graph API
 # ─────────────────────────────────────────────────────────────────
@@ -278,7 +292,14 @@ def run(client_slug: str) -> dict:
             filters={"client_id": client_id, "status": "final_approved"},
             limit=10,
         )
-        ready = [r for r in all_final if r.get("human_approved") is True and r.get("design_url")]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        # next_retry_at 미래면 backoff 중 — skip해서 매 cron 8 API call 낭비 차단
+        ready = [
+            r for r in all_final
+            if r.get("human_approved") is True
+            and r.get("design_url")
+            and (not r.get("next_retry_at") or r["next_retry_at"] <= now_iso)
+        ]
 
         # 오늘 이미 게시된 수 확인 (Meta API 25포스트/일 한도)
         from datetime import date as _date
@@ -341,40 +362,70 @@ def run(client_slug: str) -> dict:
 
             ig_post_id: str | None = None
             last_error: str | None = None
+            creation_id: str | None = None
+            # rate limit 단계 추적: container 생성 단계 실패는 reusable=False (creation_id 무효),
+            # publish 단계 실패는 reusable=True (creation_id 살아있음, 다음 cron에서 publish만 재시도)
+            container_reusable = False
 
-            # retry 제거: timeout 후 IG가 백그라운드 publish 완료하면 재시도가 중복 게시를 만든다.
-            # 실패 시 즉시 'failed'로 마킹하고 운영자가 수동 확인.
+            # 24h 미만 pending_creation_id 있으면 재사용 — 매 retry 8 API call → 1 call로 감소
+            existing_creation_id = idea.get("pending_creation_id")
+            existing_at = idea.get("pending_creation_id_at")
+            if existing_creation_id and existing_at:
+                from datetime import timedelta
+                try:
+                    created_dt = datetime.fromisoformat(str(existing_at).replace("Z", "+00:00"))
+                    age_hours = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                    if age_hours < _CONTAINER_TTL_HOURS:
+                        creation_id = existing_creation_id
+                        container_reusable = True
+                        print(f"  → 기존 container 재사용 ({creation_id}, age={age_hours:.1f}h)")
+                    else:
+                        print(f"  → pending_creation_id 만료 ({age_hours:.1f}h ≥ {_CONTAINER_TTL_HOURS}h) — 재생성")
+                except Exception as exc:
+                    print(f"  → pending_creation_id_at 파싱 실패: {exc} — 재생성")
+
             try:
-                caption = _build_caption(idea)
+                if creation_id is None:
+                    caption = _build_caption(idea)
 
-                if len(carousel_urls) > 1:
-                    print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중...")
-                    child_ids = []
-                    for i, slide_url in enumerate(carousel_urls, 1):
-                        child_id = _ig_create_container(
+                    if len(carousel_urls) > 1:
+                        print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중...")
+                        child_ids = []
+                        for i, slide_url in enumerate(carousel_urls, 1):
+                            child_id = _ig_create_container(
+                                ig_account_id, ig_access_token,
+                                image_url=slide_url,
+                                is_carousel_item=True,
+                            )
+                            child_ids.append(child_id)
+                            print(f"    ├─ 슬라이드 {i}/{len(carousel_urls)}: {child_id}")
+                            time.sleep(1)
+
+                        creation_id = _ig_create_carousel_container(
                             ig_account_id, ig_access_token,
-                            image_url=slide_url,
-                            is_carousel_item=True,
+                            children=child_ids,
+                            caption=caption,
                         )
-                        child_ids.append(child_id)
-                        print(f"    ├─ 슬라이드 {i}/{len(carousel_urls)}: {child_id}")
-                        time.sleep(1)
+                        print(f"  → Step 1 완료 (carousel creation_id={creation_id}, children={len(child_ids)})")
+                    else:
+                        image_url = carousel_urls[0] if carousel_urls else design_url
+                        print(f"  → Step 1: 단일 이미지 컨테이너 생성...")
+                        creation_id = _ig_create_container(
+                            ig_account_id, ig_access_token, image_url, caption
+                        )
+                        print(f"  → Step 1 완료 (creation_id={creation_id})")
 
-                    creation_id = _ig_create_carousel_container(
-                        ig_account_id, ig_access_token,
-                        children=child_ids,
-                        caption=caption,
+                    # parent container 생성 직후 즉시 DB에 저장 — 다음 단계 실패해도 재사용 가능
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={
+                            "pending_creation_id": creation_id,
+                            "pending_creation_id_at": datetime.now(timezone.utc).isoformat(),
+                        },
                     )
-                    print(f"  → Step 1 완료 (carousel creation_id={creation_id}, children={len(child_ids)})")
-                else:
-                    image_url = carousel_urls[0] if carousel_urls else design_url
-                    print(f"  → Step 1: 단일 이미지 컨테이너 생성...")
-                    creation_id = _ig_create_container(
-                        ig_account_id, ig_access_token, image_url, caption
-                    )
-                    print(f"  → Step 1 완료 (creation_id={creation_id})")
-
-                time.sleep(5)
+                    container_reusable = True
+                    time.sleep(5)
 
                 print(f"  → Step 2: 게시 실행...")
                 ig_post_id = _ig_publish(ig_account_id, ig_access_token, creation_id)
@@ -389,18 +440,37 @@ def run(client_slug: str) -> dict:
                 # rate limit이면 status를 final_approved로 되돌려 다음 cron이 재시도하도록.
                 # 그 외 에러는 기존대로 failed로 마킹 (운영자 수동 확인).
                 if _is_rate_limit_error(err):
-                    db_client.update(
-                        "content_ideas",
-                        filters={"id": idea_id},
-                        patch={"status": "final_approved", "last_error": err[:500]},
+                    from datetime import timedelta
+                    prev_retry = int(idea.get("retry_count") or 0)
+                    new_retry = prev_retry + 1
+                    delay_min = _next_retry_delay_minutes(prev_retry)
+                    next_at = (datetime.now(timezone.utc) + timedelta(minutes=delay_min)).isoformat()
+                    patch = {
+                        "status": "final_approved",
+                        "last_error": err[:500],
+                        "retry_count": new_retry,
+                        "next_retry_at": next_at,
+                    }
+                    # container 생성 단계 실패면 pending_creation_id 무효화 — 다음 retry에서 재생성
+                    if not container_reusable:
+                        patch["pending_creation_id"] = None
+                        patch["pending_creation_id_at"] = None
+                    db_client.update("content_ideas", filters={"id": idea_id}, patch=patch)
+                    print(
+                        f"[publisher:{client_slug}] ⏸ {idea_id[:8]} → rate-limit "
+                        f"(retry #{new_retry}, next in {delay_min}m, container_reusable={container_reusable})"
                     )
-                    print(f"[publisher:{client_slug}] ⏸ {idea_id[:8]} → rate-limit, retry next cron")
                     results.append({"idea_id": idea_id, "ig_post_id": None, "success": False, "skipped": "rate_limit"})
                 else:
                     db_client.update(
                         "content_ideas",
                         filters={"id": idea_id},
-                        patch={"status": "failed", "last_error": err[:500]},
+                        patch={
+                            "status": "failed",
+                            "last_error": err[:500],
+                            "pending_creation_id": None,
+                            "pending_creation_id_at": None,
+                        },
                     )
                     print(f"[publisher:{client_slug}] ❌ {idea_id[:8]} → failed: {err[:80]}")
                     results.append({"idea_id": idea_id, "ig_post_id": None, "success": False})
@@ -419,6 +489,11 @@ def run(client_slug: str) -> dict:
                     "published_at": published_at,
                     "analytics_due_at": analytics_due_at,
                     "analytics_collected": False,
+                    "pending_creation_id": None,
+                    "pending_creation_id_at": None,
+                    "next_retry_at": None,
+                    "retry_count": 0,
+                    "last_error": None,
                 },
             )
             published_ideas.append({**idea, "ig_post_id": ig_post_id})
