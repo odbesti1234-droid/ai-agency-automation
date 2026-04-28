@@ -538,17 +538,27 @@ def generate_slide_script(
     for attempt in range(1, max_retries + 2):  # 1차 + 재시도 max_retries 회 = 최대 5회
         user_message = (feedback_prefix + "\n\n" + base_message) if feedback_prefix else base_message
 
-        response = _client.messages.create(
-            model=_MODEL,
-            max_tokens=2000,
-            system=[{"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}}],
-            messages=[{"role": "user", "content": user_message}],
-        )
-        raw = response.content[0].text.strip()
-        slides = _parse_json_response(raw)
-        if not isinstance(slides, list) or not (5 <= len(slides) <= 9):
-            # 형식 자체가 깨지면 즉시 raise (페널티 루프로 회복 불가)
-            raise ValueError(f"슬라이드 5-9개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
+        try:
+            response = _client.messages.create(
+                model=_MODEL,
+                max_tokens=3500,  # ghost_text/source 등 새 필드 + 6-9슬라이드 안전 buffer
+                system=[{"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": user_message}],
+            )
+            raw = response.content[0].text.strip()
+            slides = _parse_json_response(raw)
+            if not isinstance(slides, list) or not (5 <= len(slides) <= 9):
+                raise ValueError(f"슬라이드 5-9개 기대, {len(slides) if isinstance(slides, list) else '?'}개 반환")
+        except (ValueError, Exception) as e:
+            # 파싱·길이 실패도 evaluator retry 흐름으로 흡수 (남은 시도 있으면 재시도, 없으면 raise)
+            if attempt > max_retries:
+                raise
+            feedback_prefix = (
+                "[이전 시도 페널티 — 반드시 모두 수정]\n"
+                f"❌ FAIL [parse_error] 직전 응답이 JSON 배열로 파싱되지 않거나 5-9개 슬라이드 범위를 벗어남 ({type(e).__name__}). "
+                "반드시 JSON 배열만 반환하고 5-9개 슬라이드 안에서 마무리하라."
+            )
+            continue
 
         last_slides = slides
         last_eval = evaluate_slide_script(slides)
