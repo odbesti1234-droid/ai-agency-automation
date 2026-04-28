@@ -21,31 +21,69 @@ from __future__ import annotations
 import re
 
 # ──────────────────────────────────────────────────────────────
-# 룰 1: 시퀀스 일탈 — 같은 visual_direction 패턴 ≥ 2장
+# 룰 1: 시퀀스 일탈 — 본문 슬라이드 visual_direction 페어 word-token Jaccard ≥ 임계
 # ──────────────────────────────────────────────────────────────
 
-def _normalize_visual(text: str) -> str:
-    """visual_direction 정규화 — 첫 40자 lowercase + 공백 정리. 패턴 동일성 비교용."""
-    return re.sub(r"\s+", " ", (text or "").lower().strip())[:40]
+_SEQ_DRIFT_JACCARD_THRESHOLD = 0.5  # word-token set Jaccard. 자기비판 #3 false negative 완화.
+
+# 모든 visual_direction에 흔히 등장하는 의미 약한 토큰 — 동일 패턴 판정에서 제외
+_VISUAL_STOPWORDS = {
+    "배경", "bg", "background", "색", "color", "tone",
+    "정렬", "align", "layout", "레이아웃", "디자인", "design",
+    "슬라이드", "slide", "card", "카드", "느낌", "스타일", "style",
+    "있는", "이미지", "image",
+}
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[가-힣]+")
+
+
+def _word_token_set(text: str) -> set:
+    """visual_direction → 의미 단어 set. 한글·영문·숫자 토큰 추출 후 stopwords·짧은 토큰 제거."""
+    tokens = _TOKEN_RE.findall((text or "").lower())
+    return {t for t in tokens if len(t) >= 2 and t not in _VISUAL_STOPWORDS}
+
+
+def _jaccard(a: set, b: set) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
 
 
 def _check_sequence_drift(slides: list[dict]) -> dict | None:
     body_slides = [s for s in slides if s.get("role") in {"insight", "tip", "problem"}]
     if len(body_slides) < 2:
         return None
-    seen: dict[str, int] = {}
+
+    fingerprints: list[tuple[int, set, str]] = []
     for s in body_slides:
-        key = _normalize_visual(s.get("visual_direction", ""))
-        if not key:
-            continue
-        seen[key] = seen.get(key, 0) + 1
-    duplicates = [(k, v) for k, v in seen.items() if v >= 2]
-    if duplicates:
+        vd = s.get("visual_direction", "") or ""
+        tokens = _word_token_set(vd)
+        if tokens:
+            fingerprints.append((s.get("slide", 0), tokens, vd[:40]))
+
+    collisions: list[dict] = []
+    for i in range(len(fingerprints)):
+        for j in range(i + 1, len(fingerprints)):
+            si, set_i, vi = fingerprints[i]
+            sj, set_j, vj = fingerprints[j]
+            score = _jaccard(set_i, set_j)
+            if score >= _SEQ_DRIFT_JACCARD_THRESHOLD:
+                collisions.append({
+                    "slide_a": si, "slide_b": sj,
+                    "jaccard": round(score, 2),
+                    "shared": sorted(set_i & set_j),
+                    "preview_a": vi, "preview_b": vj,
+                })
+
+    if collisions:
         return {
             "rule": "sequence_drift",
             "severity": "fail",
-            "message": f"본문 슬라이드 N장 중 같은 visual_direction 패턴 ≥ 2장 ({len(duplicates)}쌍). 슬라이드 사이 변주 강제.",
-            "details": [{"pattern": k[:30], "count": v} for k, v in duplicates],
+            "message": (
+                f"본문 슬라이드 visual_direction 충돌 페어 {len(collisions)}쌍 "
+                f"(word Jaccard ≥ {_SEQ_DRIFT_JACCARD_THRESHOLD}). 슬라이드 사이 시각 변주 강제."
+            ),
+            "details": collisions,
         }
     return None
 
