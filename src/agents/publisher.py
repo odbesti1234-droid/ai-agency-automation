@@ -73,6 +73,56 @@ def _next_retry_delay_minutes(retry_count: int) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Publish-verify 안전 패턴 (메모리 feedback_external_publish_safety 강화)
+# 2026-04-26 16중 게시 + 2026-04-29 13중 게시 사건 근거.
+# 핵심: publish 응답이 rate-limit/Fatal/timeout이어도 IG는 publish 처리한 케이스 다수.
+# 같은 idea가 30분 cron마다 재publish되면 N번 중복 게시 발생.
+# 해결:
+#   1) publish 직전 IG 최근 게시물 caption pre-check → 같은 caption 있으면 publish 호출 자체 skip
+#   2) publish 실패 직후 IG 최근 게시물 verify → 우리 caption 있으면 published 처리 (재시도 차단)
+# ─────────────────────────────────────────────────────────────────
+
+_VERIFY_LOOKBACK_N = 8  # 최근 N개 게시물 caption 검사
+_VERIFY_WAIT_AFTER_PUBLISH_S = 8  # publish 실패 후 IG 인덱싱 대기
+
+
+def _ig_recent_posts(ig_account_id: str, access_token: str, n: int = _VERIFY_LOOKBACK_N) -> list[dict]:
+    """최근 N개 게시물 [{id, caption, timestamp}] 반환. 실패 시 빈 list."""
+    try:
+        r = httpx.get(
+            f"{_GRAPH_BASE}/{ig_account_id}/media",
+            params={"fields": "id,caption,timestamp", "limit": n, "access_token": access_token},
+            timeout=15,
+        )
+        data = r.json()
+        return data.get("data", []) if isinstance(data, dict) else []
+    except Exception as e:
+        print(f"[publisher] IG 최근 게시물 조회 실패 (verify skip): {e}")
+        return []
+
+
+def _caption_signature(caption: str, n: int = 80) -> str:
+    """caption 첫 N자(공백 정리) — 중복 매칭 키. hashtag·이모지 제거 X (그대로)."""
+    if not caption:
+        return ""
+    return " ".join(caption.split())[:n].strip()
+
+
+def _find_existing_post(recent_posts: list[dict], our_caption: str) -> dict | None:
+    """우리 caption signature가 최근 게시물 중에 있으면 그 게시물 dict 반환.
+    양쪽 모두 _caption_signature 정규화 후 비교 (개행·공백 차이 제거).
+    """
+    sig = _caption_signature(our_caption)
+    if not sig or len(sig) < 20:  # 너무 짧은 caption은 false positive 위험 — verify 안 함
+        return None
+    for post in recent_posts:
+        post_sig = _caption_signature(post.get("caption") or "", n=400)  # post는 길게 잡아 substring 매칭
+        if sig in post_sig:
+            return post
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────
 # Instagram Graph API
 # ─────────────────────────────────────────────────────────────────
 
@@ -360,6 +410,42 @@ def run(client_slug: str) -> dict:
                 results.append({"idea_id": idea_id, "ig_post_id": None, "success": False, "skipped": "claimed_by_other"})
                 continue
 
+            # 🛡 PRE-CHECK: 같은 caption이 IG에 이미 게시됐는지 확인 (중복 publish 차단).
+            # 직전 사건(2026-04-29 13중 게시) 근거: publish 응답이 rate-limit이어도 IG는 publish 처리
+            # → next cron이 또 publish → 매번 새 게시물. pre-check로 publish 호출 자체를 막음.
+            our_caption = _build_caption(idea)
+            recent_posts = _ig_recent_posts(ig_account_id, ig_access_token, n=_VERIFY_LOOKBACK_N)
+            existing = _find_existing_post(recent_posts, our_caption)
+            if existing:
+                existing_id = existing.get("id", "")
+                existing_ts = existing.get("timestamp", "")
+                print(
+                    f"[publisher:{client_slug}] 🛡 {idea_id[:8]} pre-check: IG에 이미 게시됨 "
+                    f"(post_id={existing_id}, ts={existing_ts[:19]}) — publish 호출 skip + status=published 마킹"
+                )
+                from datetime import timedelta
+                published_at_dt = datetime.now(timezone.utc)
+                analytics_due_at = (published_at_dt + timedelta(hours=48)).isoformat()
+                db_client.update(
+                    "content_ideas",
+                    filters={"id": idea_id},
+                    patch={
+                        "status": "published",
+                        "ig_post_id": existing_id,
+                        "published_at": existing_ts or published_at_dt.isoformat(),
+                        "analytics_due_at": analytics_due_at,
+                        "analytics_collected": False,
+                        "pending_creation_id": None,
+                        "pending_creation_id_at": None,
+                        "next_retry_at": None,
+                        "retry_count": 0,
+                        "last_error": "PRE_CHECK_DUPLICATE_AVOIDED: caption already on IG",
+                    },
+                )
+                published_ideas.append({"idea_id": idea_id, "ig_post_id": existing_id, "skipped": "duplicate_avoided"})
+                results.append({"idea_id": idea_id, "ig_post_id": existing_id, "success": True, "skipped": "duplicate_avoided"})
+                continue
+
             ig_post_id: str | None = None
             last_error: str | None = None
             creation_id: str | None = None
@@ -436,6 +522,43 @@ def run(client_slug: str) -> dict:
 
             if ig_post_id is None:
                 err = last_error or "unknown"
+
+                # 🛡 POST-VERIFY: publish 실패로 판정됐어도 IG는 실제 publish했을 수 있음.
+                # 8초 대기 후 IG 최근 게시물 caption 확인 → 우리 caption 있으면 published 처리 (재시도 차단).
+                # rate-limit과 Fatal 모두 verify (response timing 차이로 둘 다 race condition 발생).
+                print(f"  → 🛡 publish 실패 ({err[:50]}) — 실측 verify 시작 ({_VERIFY_WAIT_AFTER_PUBLISH_S}s 대기)")
+                time.sleep(_VERIFY_WAIT_AFTER_PUBLISH_S)
+                verify_posts = _ig_recent_posts(ig_account_id, ig_access_token, n=_VERIFY_LOOKBACK_N)
+                verified = _find_existing_post(verify_posts, our_caption)
+                if verified:
+                    verified_id = verified.get("id", "")
+                    verified_ts = verified.get("timestamp", "")
+                    print(
+                        f"  → 🛡 verify 발견: IG에 이미 publish됨 (post_id={verified_id}, ts={verified_ts[:19]}) — published 처리"
+                    )
+                    from datetime import timedelta
+                    published_at_dt = datetime.now(timezone.utc)
+                    analytics_due_at = (published_at_dt + timedelta(hours=48)).isoformat()
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={
+                            "status": "published",
+                            "ig_post_id": verified_id,
+                            "published_at": verified_ts or published_at_dt.isoformat(),
+                            "analytics_due_at": analytics_due_at,
+                            "analytics_collected": False,
+                            "pending_creation_id": None,
+                            "pending_creation_id_at": None,
+                            "next_retry_at": None,
+                            "retry_count": 0,
+                            "last_error": f"POST_VERIFY_RECOVERED: publish 응답은 \"{err[:40]}\"이지만 IG에 실제 게시됨",
+                        },
+                    )
+                    published_ideas.append({"idea_id": idea_id, "ig_post_id": verified_id, "skipped": "post_verify_recovered"})
+                    results.append({"idea_id": idea_id, "ig_post_id": verified_id, "success": True, "skipped": "post_verify_recovered"})
+                    continue
+
                 errors.append({"idea_id": idea_id, "error": err})
                 # rate limit이면 status를 final_approved로 되돌려 다음 cron이 재시도하도록.
                 # 그 외 에러는 기존대로 failed로 마킹 (운영자 수동 확인).
