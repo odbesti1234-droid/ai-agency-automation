@@ -572,20 +572,35 @@ def run(client_slug: str) -> dict:
 
 
 def run_all_active() -> list[dict]:
-    """활성 클라이언트 전체 게시 실행."""
+    """활성 클라이언트 전체 게시 실행.
+
+    publish_hour_utc 설정된 client는 현재 UTC hour와 매치될 때만 처리.
+    NULL이면 매 cron 시도 (기존 동작). 같은 IG 앱 토큰을 공유하는
+    여러 client가 동시에 8 API call씩 던져 rate limit을 채우는 패턴 방지.
+    """
     db_client = SupabaseClient()
     try:
         clients = db_client.select("clients", filters={"is_active": True})
     finally:
         db_client.close()
 
+    current_hour = datetime.now(timezone.utc).hour
     results = []
-    for i, client in enumerate(clients):
+    eligible: list[dict] = []
+    for client in clients:
         slug = client.get("slug", "")
         if not slug:
             continue
+        publish_hour = client.get("publish_hour_utc")
+        if publish_hour is not None and publish_hour != current_hour:
+            print(f"[publisher:{slug}] skip — publish_hour_utc={publish_hour}, current={current_hour}")
+            continue
+        eligible.append(client)
+
+    for i, client in enumerate(eligible):
+        slug = client["slug"]
         if i > 0:
-            # 클라이언트 간 IG Graph API rate limit 분산 (carousel 7+ API call 연속 시 한도 초과)
+            # 같은 hour에 매치된 다중 client 간 IG Graph API rate limit 분산
             time.sleep(15)
         results.append(run(slug))
     return results
