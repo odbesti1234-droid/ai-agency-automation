@@ -130,18 +130,33 @@ def fetch(client_slug: str) -> dict:
     brand_voice: dict = client.get("brand_voice") or {}
     niche: str = brand_voice.get("niche", "") or ""
 
-    # 쿼리 선택: niche 키워드 먼저, 없으면 industry
-    queries: list[str] = []
-    for key, q_list in _NICHE_QUERY_MAP:
-        if key in niche or key in industry:
-            queries = q_list
-            break
-    if not queries:
-        queries = _INDUSTRY_QUERIES.get(industry, [
-            f"{niche or industry} 최신 뉴스 트렌드 2025",
-        ])
+    # 쿼리 선택 우선순위:
+    # 1) brand_voice.news_query_seeds (사용자 명시 — 최우선)
+    # 2) niche 키워드 매핑
+    # 3) industry 매핑
+    # 4) 폴백
+    seed_list = brand_voice.get("news_query_seeds") if isinstance(brand_voice, dict) else None
+    if isinstance(seed_list, list) and seed_list:
+        queries = list(seed_list)
+    else:
+        queries = []
+        for key, q_list in _NICHE_QUERY_MAP:
+            if key in niche or key in industry:
+                queries = q_list
+                break
+        if not queries:
+            queries = _INDUSTRY_QUERIES.get(industry, [
+                f"{niche or industry} 최신 뉴스 트렌드 2025",
+            ])
 
-    search_q = queries[0]
+    # 매번 같은 쿼리만 잡으면 토픽 다양성 ↓ (카톡 봇 큐레이션 패턴 모방).
+    # 시드 N개 중 random.choice → 매일 다른 토픽 cover. 단 deterministic 검증 필요 시 환경변수 NEWS_SEED_INDEX로 강제.
+    import random as _random
+    forced = os.environ.get("NEWS_SEED_INDEX")
+    if forced is not None and forced.isdigit() and queries:
+        search_q = queries[int(forced) % len(queries)]
+    else:
+        search_q = _random.choice(queries) if queries else f"{niche or industry} 최신 뉴스"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     print(f"[{client_name}] 실제 뉴스 검색: '{search_q}'")
 
@@ -154,18 +169,22 @@ def fetch(client_slug: str) -> dict:
         # 출력 형식 강제 — 직전 버그(마크다운 헤더 + incomplete output)로 confidence=0 대량 발생.
         # 한 단락·평문·구체 수치 명시.
         _format_strict = (
-            "출력 형식 (반드시 준수):\n"
+            "절대 규칙:\n"
+            "- web_search 도구를 반드시 1회 이상 사용한 후에만 답하라. 도구 없이 거부 답변 금지\n"
+            "- 검색 결과에서 가장 적합한 1건을 선별 (정확도 < 신선도 우선)\n"
+            "출력 형식:\n"
             "- 마크다운 금지 (제목 헤더·불릿·굵게 모두 X)\n"
             "- 한 단락 평문\n"
-            "- 다음 4가지 모두 포함: 기사 제목 / 발표일(YYYY-MM-DD 또는 YYYY년 M월) / 출처 / 핵심 수치 1개 이상\n"
+            "- 다음 4가지 모두 포함: 기사 제목 / 발표일(YYYY-MM-DD 또는 YYYY년 M월) / 출처 / 핵심 수치 또는 지역·단지명 1개 이상\n"
             "- 200자 내외 권장, 250자 이내 강제"
         )
 
         _pass1_system = (
-            "너는 부동산 시장 데이터 분석가다. 주어진 키워드로 KB부동산·한국부동산원·국토부 등 "
-            "공식 기관의 확인된 통계·실거래가·매매지수 데이터 1건을 찾아라. "
-            "기관명, 발표 날짜, 구체적 수치(가격·등락률·거래량)를 빠짐없이 요약해라. "
-            "공식 데이터를 찾지 못하면 '없음'이라고만 써라.\n\n" + _format_strict
+            "너는 부동산 시장 데이터 분석가다. 주어진 키워드로 가장 최신·구체적인 뉴스 1건을 찾아라. "
+            "우선순위: KB부동산·한국부동산원·국토부 등 공식 기관 자료 > 한국경제·매일경제·조선일보 등 메이저 언론 부동산 섹션 > 부동산 전문 매체. "
+            "공식 자료가 있으면 더 좋지만 없어도 메이저 매체 부동산 뉴스로 OK. "
+            "기사 제목, 날짜, 출처, 구체적 수치(가격·등락률·거래량) 또는 단지/지역명을 빠짐없이 요약해라. "
+            "검색 결과 자체가 비어있으면 '없음'이라고만 써라.\n\n" + _format_strict
             if _is_authority else
             "너는 뉴스 검색 도우미다. 주어진 키워드로 가장 최신·구체적인 뉴스 1건을 찾아라. "
             "기사 제목, 날짜, 출처, 핵심 내용(수치·기능명 포함)을 빠짐없이 요약해라. "
