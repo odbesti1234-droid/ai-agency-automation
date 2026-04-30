@@ -1496,6 +1496,24 @@ def _component_icon_stat_grid(stats: list[dict], palette: dict) -> str:
     )
 
 
+def _resolve_image(c: dict, palette: dict) -> str:
+    """이미지 컴포넌트 URL 해결 — image_url 우선, 없으면 image_query → fetch_image,
+    그것도 없으면 mood 기반 fallback."""
+    url = (c.get("image_url") or "").strip()
+    if url:
+        return url
+    try:
+        from src.utils.image_source import fetch_image, fetch_for_mood
+        query = (c.get("image_query") or "").strip()
+        if query:
+            return fetch_image(query, fallback_seed=query)
+        mood = palette.get("mood") or ""
+        return fetch_for_mood(mood)
+    except Exception as exc:
+        print(f"  [resolve_image] 실패: {exc}")
+        return ""
+
+
 def _render_components(components: Any, palette: dict) -> str:
     """slide.components → HTML.
 
@@ -1565,20 +1583,26 @@ def _render_components(components: Any, palette: dict) -> str:
                 if isinstance(stats, list) and stats:
                     parts.append(_component_icon_stat_grid(stats, palette))
             elif ctype == "hero_image":
-                parts.append(_component_hero_image(
-                    c.get("image_url", ""), palette,
-                    height=int(c.get("height", 360)),
-                    overlay=float(c.get("overlay", 0.45)),
-                ))
+                url = _resolve_image(c, palette)
+                if url:
+                    parts.append(_component_hero_image(
+                        url, palette,
+                        height=int(c.get("height", 360)),
+                        overlay=float(c.get("overlay", 0.45)),
+                    ))
             elif ctype == "side_image":
-                parts.append(_component_side_image(
-                    c.get("image_url", ""), c.get("caption", ""),
-                    palette, side=c.get("side", "left"),
-                ))
+                url = _resolve_image(c, palette)
+                if url:
+                    parts.append(_component_side_image(
+                        url, c.get("caption", ""),
+                        palette, side=c.get("side", "left"),
+                    ))
             elif ctype == "image_card":
-                parts.append(_component_image_card(
-                    c.get("image_url", ""), c.get("label", ""), palette,
-                ))
+                url = _resolve_image(c, palette)
+                if url:
+                    parts.append(_component_image_card(
+                        url, c.get("label", ""), palette,
+                    ))
             else:
                 print(f"  [render_components] unknown type='{ctype}' — skip")
         except Exception as exc:

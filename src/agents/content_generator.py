@@ -249,6 +249,19 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 - `{"type": "icon_stat_grid", "stats": [{"icon": "home", "value": "23", "label": "이번 달 거래"}, {"icon": "growth", "value": "+5%", "label": "호가 상승"}, {"icon": "money", "value": "9.2억", "label": "평균 거래가"}]}`
   → 3~4개 아이콘+숫자+라벨 그리드. 다중 통계 한눈 보기. icon: home/money/chart/growth/key/calc/doc/pin/ai/data/alert/check 중 1개.
 
+[이미지 컴포넌트] — 진짜 사진/일러스트. image_query만 명시하면 Pexels 자동 매칭. image_url은 명시하지 마라(자동 채워짐).
+- `{"type": "hero_image", "image_query": "seoul skyline night", "height": 320, "overlay": 0.5}`
+  → 배경 이미지 + 다크 오버레이. cover/insight 큰 시각 시그너처. height 240~400, overlay 0.3~0.6.
+- `{"type": "side_image", "image_query": "luxury modern interior", "caption": "단지 디테일은 DM으로", "side": "left"}`
+  → 좌/우 50% 이미지 + 캡션 텍스트. 부가 정보·디테일 슬라이드. side: "left"|"right".
+- `{"type": "image_card", "image_query": "data visualization dashboard", "label": "DASHBOARD"}`
+  → 단일 이미지 카드 + 좌하단 라벨 오버레이. 강조용·소개용.
+
+**image_query 작성 룰**: 영어 키워드 2~4개, 슬라이드 컨셉 + 무드. mood별 키워드 풀 권장:
+- planb_pm/luxury    : marble texture, gold detail, modern architecture night, luxury interior, skyline aerial, premium glass facade
+- fit_ai_founder/ai  : artificial intelligence abstract, neural network visualization, code on screen, data visualization, server room blue, futuristic technology
+- finance/real-estate: financial chart, modern apartment building, business analytics, wealth management
+
 [구조 시각 컴포넌트] — 본문 분해·비교·신뢰 신호.
 - `{"type": "bad_good", "bad_label": "✗ 호가", "bad_text": "9억 5천", "good_label": "✓ 실거래", "good_text": "8억 3천"}`
   → 좌(BAD) vs 우(GOOD) 비교박스. 가격 갭·이전 vs 이후·잘못된 vs 올바른 패턴에 사용.
@@ -263,9 +276,10 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 
 **필수 사용 룰**:
 - **insight/tip 슬라이드 N장 중 최소 1장 이상은 정보형 시각 컴포넌트(big_number/bar_chart/donut_stat/icon_stat_grid/n_table) 명시 — 안 하면 no_visual_data fail.**
-- 텍스트만 있는 정보 카드뉴스 = 슬롭. 차트·인포그래픽이 시각 핵심.
+- **insight/tip 슬라이드 N장 중 최소 1장 이상은 이미지 컴포넌트(hero_image/side_image/image_card) 명시 — 진짜 사진 없으면 밋밋함. mood 키워드 풀에서 골라라.**
+- 텍스트만 있는 정보 카드뉴스 = 슬롭. 차트·인포그래픽 + 진짜 사진이 시각 핵심.
 - subtext 75자/3줄 초과 예상 시 무조건 components로 분해 (페널티 회피).
-- 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제 (예: bar_chart + big_number + n_table 조합).
+- 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제 (예: bar_chart + big_number + hero_image + n_table 조합).
 
 source 또는 date가 있으면 save/benchmark 슬라이드 하단에 메타 출처 박스가 자동 노출된다. AI 슬롭 차단 핵심 신호이므로 benchmark·통계 인용 슬라이드는 무조건 채워라.
 
@@ -354,11 +368,12 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "role": "insight",
     "headline": "수내동만 9.2% 단독 상승",
     "subtext": "강남·송파는 마이너스",
-    "visual_direction": "다크 그린 배경, 좌측 9.2% 큰 숫자(120pt), 우측 비교박스",
+    "visual_direction": "다크 배경, 도시 야경 hero_image + big_number 9.2%",
     "ghost_text": "9.2%",
     "category_label": "MARKET INSIGHT",
     "components": [
-      {"type": "bad_good", "bad_label": "강남·송파", "bad_text": "-1.3% · -0.8% 약세", "good_label": "수내동", "good_text": "+9.2% 단독 상승"}
+      {"type": "hero_image", "image_query": "seoul skyline night aerial", "height": 280, "overlay": 0.55},
+      {"type": "big_number", "value": "9.2", "unit": "%", "label": "수내동 32평 분기 상승률", "delta": "↑ vs 강남 -1.3% / 송파 -0.8%"}
     ],
     "emotion_tone": "흥미",
     "text_content": "수내동만 9.2% 단독 상승 강남·송파는 마이너스"
@@ -368,14 +383,16 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "role": "insight",
     "headline": "지금 들어갈 3개 단지",
     "subtext": "분기 들어 호가 회복 중",
-    "visual_direction": "다크 배경, 단지명 3개 N항목 표 배치",
-    "ghost_text": "TIP 02",
+    "visual_direction": "다크 배경, 럭셔리 인테리어 image_card + icon_stat_grid 4종",
+    "ghost_text": "TOP 3",
     "category_label": "ENTRY POINT",
     "components": [
-      {"type": "n_table", "rows": [
-        {"label": "양지마을 1", "text": "9.2억 · 32평 · 학군A"},
-        {"label": "푸른마을 신성", "text": "9.5억 · 34평 · 학군A"},
-        {"label": "까치마을 1", "text": "9.8억 · 33평 · 학군B"}
+      {"type": "image_card", "image_query": "luxury modern apartment interior", "label": "PREMIUM RESIDENCE"},
+      {"type": "icon_stat_grid", "stats": [
+        {"icon": "home", "value": "23", "label": "분기 거래"},
+        {"icon": "growth", "value": "+9.2%", "label": "호가 상승"},
+        {"icon": "money", "value": "9.2억", "label": "평균 거래가"},
+        {"icon": "chart", "value": "-1.2억", "label": "호가-실거래 갭"}
       ]}
     ],
     "emotion_tone": "신뢰",
