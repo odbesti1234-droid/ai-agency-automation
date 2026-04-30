@@ -33,15 +33,30 @@ def send(
     if blocks:
         payload["blocks"] = blocks
 
-    try:
-        resp = httpx.post(url, json=payload, timeout=30)
-        if resp.status_code == 200:
-            return True
-        print(f"[Slack] 전송 실패: {resp.status_code} {resp.text}")
-        return False
-    except Exception as e:
-        print(f"[Slack] 오류: {e}")
-        return False
+    import time as _time
+    last_status = "unknown"
+    for attempt in range(2):  # 1회 + 504 재시도 1회
+        try:
+            resp = httpx.post(url, json=payload, timeout=30)
+            if resp.status_code == 200:
+                return True
+            last_status = f"{resp.status_code}"
+            if resp.status_code in (502, 503, 504) and attempt == 0:
+                print(f"[Slack] {resp.status_code} — 60s 후 재시도")
+                _time.sleep(60)
+                continue
+            print(f"[Slack] 전송 실패: {resp.status_code} {resp.text[:200]}")
+            return False
+        except Exception as e:
+            last_status = str(e)
+            if attempt == 0:
+                print(f"[Slack] 오류: {e} — 재시도")
+                _time.sleep(10)
+                continue
+            print(f"[Slack] 최종 실패: {e}")
+            return False
+    print(f"[Slack] 재시도 실패: {last_status}")
+    return False
 
 
 def notify_content_ready(

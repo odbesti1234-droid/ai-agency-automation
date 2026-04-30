@@ -276,7 +276,10 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 
 **필수 사용 룰**:
 - **insight/tip 슬라이드 N장 중 최소 1장 이상은 정보형 시각 컴포넌트(big_number/bar_chart/donut_stat/icon_stat_grid/n_table) 명시 — 안 하면 no_visual_data fail.**
-- **insight/tip 슬라이드 N장 중 최소 1장 이상은 이미지 컴포넌트(hero_image/side_image/image_card) 명시 — 진짜 사진 없으면 밋밋함. mood 키워드 풀에서 골라라.**
+- **본문 슬라이드(insight/tip/benchmark/save) 전체 중 이미지 컴포넌트(hero_image/side_image/image_card) 최소 2개 명시 — 1개는 부족, image_shortage fail. image_query만 명시하면 Pexels 자동 매칭. mood 키워드 풀에서 골라라.**
+- **단일 슬라이드 components 2개 이하 강제 — overcrowded_slide fail. 한 슬라이드 = 1~2 컴포넌트만. 더 보여주려면 슬라이드 추가로 분해 (5장보다 7~9장이 짐코딩급에 가까움).**
+- **headline 짧고 임팩트 — 10~16자 강력 권장 (24자 초과 = 화면 위계 약화). 긴 문장은 subtext로 분해.**
+- **save/benchmark 슬라이드는 source/date 필드만 사용 (빌더가 자동 출처 박스 노출). components 안에 meta_source 명시하면 중복 → meta_source_duplicate fail. insight/tip 슬라이드는 components meta_source 사용 OK.**
 - 텍스트만 있는 정보 카드뉴스 = 슬롭. 차트·인포그래픽 + 진짜 사진이 시각 핵심.
 - subtext 75자/3줄 초과 예상 시 무조건 components로 분해 (페널티 회피).
 - 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제 (예: bar_chart + big_number + hero_image + n_table 조합).

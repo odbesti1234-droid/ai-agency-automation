@@ -663,7 +663,7 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
         bullet_items = "".join(
             f'<div class="pain-item">{_e(b[:70])}</div>' for b in bullets
         )
-    hl_fs = 50 if len(headline) <= 16 else (42 if len(headline) <= 22 else 34)
+    hl_fs = 88 if len(headline) <= 10 else (72 if len(headline) <= 16 else (58 if len(headline) <= 24 else 46))
 
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><style>
@@ -709,11 +709,12 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
   .pain-list {{ display:flex; flex-direction:column; gap:16px; }}
   .pain-components {{ width:100%; max-width:880px; }}
   .pain-item {{
-    border-left:4px solid {secondary};
-    padding:20px 26px;
-    background:rgba({rgb_sec},0.12);
-    font-size:24px; font-weight:400; color:{on_primary};
-    line-height:1.45; border-radius:0 8px 8px 0;
+    border-left:6px solid {secondary};
+    padding:28px 36px;
+    background:rgba({rgb_sec},0.14);
+    font-size:34px; font-weight:500; color:{on_primary};
+    line-height:1.5; border-radius:0 8px 8px 0;
+    opacity:1.0;
   }}
   .swipe-hint {{
     margin-top:48px;
@@ -767,11 +768,10 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     ghost_raw = (slide.get("ghost_text") or "").strip()
     bg_text = ghost_raw if ghost_raw else num_str
     # bg-num은 폰트가 매우 크므로 텍스트가 짧을 때만 그대로, 길면 size 줄여 대응
-    bg_fs = 680 if len(bg_text) <= 2 else (520 if len(bg_text) <= 4 else (380 if len(bg_text) <= 7 else 240))
-    # category_label: "MARKET INSIGHT" / "TIP 02" / "DESIGN" 등. 없으면 "INSIGHT" 폴백.
+    bg_fs = 460 if len(bg_text) <= 2 else (360 if len(bg_text) <= 4 else (260 if len(bg_text) <= 7 else 180))
     category_label = (slide.get("category_label") or "INSIGHT").strip().upper()[:24]
-    # 헤드라인이 짧으면 ghost_text에 보여줄 키워드가 따로 있을 가능성 큼
-    hl_fs = 48 if len(headline) <= 16 else (40 if len(headline) <= 22 else 33)
+    # 헤드라인 = 화면 임팩트의 중심. 짐코딩급 큰 폰트로 위계 압도
+    hl_fs = 96 if len(headline) <= 10 else (80 if len(headline) <= 16 else (64 if len(headline) <= 24 else 52))
 
     components_html = _render_components(slide.get("components"), palette)
     data_block = ""
@@ -788,36 +788,28 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     background:{primary};
     display:flex; flex-direction:column;
     justify-content:center;
-    padding:100px 90px 90px;
+    padding:120px 100px 100px;
     overflow:hidden;
   }}
-  .components-block {{ max-width:880px; }}
-  /* 전체 캔버스를 채우는 대형 장식 숫자 — 배경 텍스처 역할 */
+  .components-block {{ max-width:920px; }}
+  /* ghost 배경 텍스처 — opacity 더 낮춰 본문 가독성 보호 */
   .bg-num {{
-    position:absolute; top:50%; right:-60px;
+    position:absolute; top:50%; right:-40px;
     transform:translateY(-50%);
     font-family:'Playfair Display',serif;
     font-style:italic; font-size:{bg_fs}px; font-weight:700;
-    color:{accent}; opacity:0.055; line-height:1;
+    color:{accent}; opacity:0.038; line-height:1;
     pointer-events:none; user-select:none;
     white-space:nowrap;
   }}
-  /* 상단 가로 액센트 바 */
   .top-bar {{
     position:absolute; top:0; left:0; right:0; height:4px;
     background:linear-gradient(90deg, {accent} 0%, transparent 100%);
   }}
-  /* 좌측 세로 액센트 라인 */
   .left-bar {{
     position:absolute; left:0; top:0; bottom:0; width:4px;
     background:linear-gradient(180deg, {accent} 0%, transparent 100%);
     opacity:0.3;
-  }}
-  /* 상단 좌측 데이터 레이블 — 빈 공간 채움 */
-  .data-report-label {{
-    position:absolute; top:190px; left:90px;
-    font-size:11px; font-weight:300; color:{accent};
-    letter-spacing:7px; text-transform:uppercase; opacity:0.35;
   }}
   .dots {{ position:absolute; top:68px; right:80px; display:flex; gap:7px; align-items:center; }}
   .corner {{ position:absolute; width:28px; height:28px; }}
@@ -825,41 +817,44 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
   .corner.tr {{ top:40px; right:40px; border-top:2px solid {accent}; border-right:2px solid {accent}; }}
   .corner.bl {{ bottom:40px; left:40px; border-bottom:2px solid {accent}; border-left:2px solid {accent}; }}
   .corner.br {{ bottom:40px; right:40px; border-bottom:2px solid {accent}; border-right:2px solid {accent}; }}
+  /* insight-badge: 라벨만 — 숫자는 부수적 */
   .insight-badge {{
     display:flex; align-items:baseline; gap:14px;
-    margin-bottom:20px;
+    margin-bottom:18px;
   }}
   .insight-num {{
     font-family:'Playfair Display',serif;
-    font-style:italic; font-size:120px; font-weight:700;
-    color:{accent}; line-height:0.9;
+    font-style:italic; font-size:80px; font-weight:700;
+    color:{accent}; line-height:0.85; opacity:0.85;
   }}
   .insight-label {{
-    font-size:13px; font-weight:300; color:{accent};
-    letter-spacing:6px; text-transform:uppercase; opacity:0.65;
-    padding-bottom:6px;
+    font-size:16px; font-weight:700; color:{accent};
+    letter-spacing:8px; text-transform:uppercase; opacity:0.95;
+    padding-bottom:10px;
   }}
   .h-rule {{
-    width:80px; height:2px; background:{accent};
-    margin-bottom:28px; opacity:0.45;
+    width:120px; height:3px; background:{accent};
+    margin-bottom:36px; opacity:0.7;
   }}
+  /* 헤드라인 = 화면 핵심. 80~96px, max 60% 화면 차지 */
   .headline {{
     font-family:'Noto Serif KR','Malgun Gothic',serif;
     font-size:{hl_fs}px; font-weight:700;
-    color:{on_primary}; line-height:1.4;
-    margin-bottom:28px; max-width:880px;
+    color:{on_primary}; line-height:1.22;
+    margin-bottom:48px; max-width:940px;
+    letter-spacing:-0.012em;
   }}
   .data-box {{
-    border:1px solid rgba({rgb},0.32);
-    padding:40px 44px;
-    background:rgba({rgb},0.10);
-    border-radius:4px;
-    max-width:840px;
+    border-left:5px solid {accent};
+    padding:36px 44px;
+    background:rgba({rgb},0.08);
+    max-width:940px;
   }}
+  /* 본문 — 40px, 짐코딩급 가독성 */
   .data-text {{
-    font-size:30px; font-weight:400; color:{on_primary};
-    opacity:0.92; line-height:1.7;
-    letter-spacing:0.005em;
+    font-size:40px; font-weight:500; color:{on_primary};
+    opacity:1.0; line-height:1.55;
+    letter-spacing:-0.005em;
   }}
   .footer {{
     position:absolute; bottom:56px; left:80px;
@@ -874,7 +869,6 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
   <div class="dots">{dots_html}</div>
-  <div class="data-report-label">&#8212; {_e(category_label)} &#8212;</div>
   <div class="insight-badge">
     <span class="insight-num">{num_str}</span>
     <span class="insight-label">{_e(category_label)}</span>
@@ -901,7 +895,7 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
     subtext = slide.get("subtext", "") or slide.get("text_content", "") or ""
     dots_html = _make_dots(total, slide_num, accent)
 
-    hl_fs = 52 if len(headline) <= 16 else (44 if len(headline) <= 22 else 36)
+    hl_fs = 92 if len(headline) <= 10 else (76 if len(headline) <= 16 else (60 if len(headline) <= 24 else 48))
 
     # save 슬라이드: 다른 슬라이드들과 동일한 primary 다크 배경 — color_consistency 유지
     # 차별화는 accent 컬러 강조 요소(상단·좌우 라인, 북마크 아이콘 stroke)로 처리
@@ -965,9 +959,9 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
     text-align:center; margin-bottom:28px; max-width:860px;
   }}
   .benefit {{
-    font-size:24px; font-weight:400; color:{on_primary};
-    opacity:0.7; text-align:center; line-height:1.6;
-    max-width:760px; margin-bottom:0;
+    font-size:36px; font-weight:500; color:{on_primary};
+    opacity:0.95; text-align:center; line-height:1.55;
+    max-width:880px; margin-bottom:0;
   }}
   .benefit-components {{ width:100%; max-width:880px; }}
   .meta-source {{
@@ -1208,12 +1202,12 @@ def _component_n_table(rows: list[dict], palette: dict) -> str:
         label = row.get("label", "")
         text = row.get("text", "")
         items_html += (
-            f'<tr><td style="padding:12px 16px; vertical-align:top; width:90px;">'
-            f'<span style="display:inline-block; padding:4px 8px; border:1px solid {accent}; color:{accent};'
-            f' font-size:11px; font-weight:600;">{_e(label)}</span></td>'
-            f'<td style="padding:12px 16px; color:{on_primary}; font-size:16px; line-height:1.5;">{_e(text)}</td></tr>'
+            f'<tr><td style="padding:20px 20px; vertical-align:top; width:200px;">'
+            f'<span style="display:inline-block; padding:9px 16px; border:2px solid {accent}; color:{accent};'
+            f' font-size:18px; font-weight:700; letter-spacing:0.04em;">{_e(label)}</span></td>'
+            f'<td style="padding:20px 20px; color:{on_primary}; font-size:28px; line-height:1.45; font-weight:500;">{_e(text)}</td></tr>'
         )
-    return f'<table style="width:100%; border-collapse:collapse; margin:24px 0;"><tbody>{items_html}</tbody></table>'
+    return f'<table style="width:100%; border-collapse:collapse; margin:28px 0;"><tbody>{items_html}</tbody></table>'
 
 
 def _component_label_box(text: str, palette: dict, fill: bool = False) -> str:
@@ -1308,18 +1302,18 @@ def _component_bar_chart(rows: list[dict], palette: dict, max_value: float | Non
     abs_max = max(abs(v) for v in values) if values else 1.0
     if max_value is None:
         max_value = abs_max if abs_max > 0 else 1.0
-    bar_h = 32
-    gap = 18
-    total_h = (bar_h + gap) * len(rows) + 20
-    bar_w_max = 580
-    label_w = 140
+    bar_h = 44
+    gap = 22
+    total_h = (bar_h + gap) * len(rows) + 24
+    bar_w_max = 600
+    label_w = 180
     items = ""
     for i, (row, v) in enumerate(zip(rows, values)):
-        y = i * (bar_h + gap) + 10
+        y = i * (bar_h + gap) + 12
         is_negative = v < 0
         ratio = abs(v) / max_value if max_value else 0
         w = max(2, ratio * bar_w_max)
-        x_start = label_w + 12
+        x_start = label_w + 14
         if is_negative:
             color = "#E07A5F"
         elif row.get("highlight"):
@@ -1329,16 +1323,16 @@ def _component_bar_chart(rows: list[dict], palette: dict, max_value: float | Non
         v_text = f"{v:+.1f}" if (isinstance(v, float) and (v < 0 or row.get("show_sign"))) else f"{v:g}"
         unit = row.get("unit", "")
         items += (
-            f'<text x="{label_w}" y="{y + bar_h * 0.7}" text-anchor="end"'
-            f' fill="{on_primary}" font-size="14" opacity="0.75"'
+            f'<text x="{label_w}" y="{y + bar_h * 0.68}" text-anchor="end"'
+            f' fill="{on_primary}" font-size="20" opacity="0.92" font-weight="500"'
             f' style="font-family:\'Noto Sans KR\',sans-serif;">{_e(row.get("label",""))}</text>'
             f'<rect x="{x_start}" y="{y}" width="{w:.1f}" height="{bar_h}" fill="{color}"/>'
-            f'<text x="{x_start + w + 10:.1f}" y="{y + bar_h * 0.7}" fill="{on_primary}"'
-            f' font-size="15" font-weight="700"'
+            f'<text x="{x_start + w + 14:.1f}" y="{y + bar_h * 0.68}" fill="{on_primary}"'
+            f' font-size="22" font-weight="700"'
             f' style="font-family:\'Noto Sans KR\',sans-serif;">{_e(v_text)}{_e(unit)}</text>'
         )
     return (
-        f'<svg viewBox="0 0 880 {total_h}" width="100%" style="margin:24px 0; max-width:880px;">'
+        f'<svg viewBox="0 0 920 {total_h}" width="100%" style="margin:28px 0; max-width:920px;">'
         f'{items}</svg>'
     )
 
@@ -1481,18 +1475,18 @@ def _component_icon_stat_grid(stats: list[dict], palette: dict) -> str:
         value = str(s.get("value", ""))
         label = str(s.get("label", ""))
         items += (
-            f'<div style="flex:1; min-width:160px; padding:24px 16px;'
-            f' border:1px solid rgba({rgb_on},0.12); text-align:center;">'
-            f'<svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="{accent}"'
-            f' style="margin-bottom:12px;">{path}</svg>'
-            f'<div style="font-family:\'Playfair Display\',serif; font-size:36px; font-weight:700;'
+            f'<div style="flex:1; min-width:200px; padding:36px 22px;'
+            f' border:1px solid rgba({rgb_on},0.18); text-align:center;">'
+            f'<svg width="64" height="64" viewBox="0 0 48 48" fill="none" stroke="{accent}"'
+            f' style="margin-bottom:18px;">{path}</svg>'
+            f'<div style="font-family:\'Playfair Display\',serif; font-size:56px; font-weight:700;'
             f' color:{on_primary}; line-height:1;">{_e(value)}</div>'
-            f'<div style="margin-top:8px; font-size:12px; color:{on_primary}; opacity:0.55;'
-            f' letter-spacing:0.06em; text-transform:uppercase;">{_e(label)}</div>'
+            f'<div style="margin-top:12px; font-size:17px; color:{on_primary}; opacity:0.85;'
+            f' letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">{_e(label)}</div>'
             f'</div>'
         )
     return (
-        f'<div style="display:flex; gap:14px; margin:24px 0; flex-wrap:wrap;">{items}</div>'
+        f'<div style="display:flex; gap:16px; margin:28px 0; flex-wrap:wrap;">{items}</div>'
     )
 
 
@@ -1811,6 +1805,72 @@ def render_html_to_png(html: str) -> bytes:
 
         with open(png_path, "rb") as f:
             return f.read()
+    finally:
+        Path(html_path).unlink(missing_ok=True)
+        Path(png_path).unlink(missing_ok=True)
+
+
+def render_html_to_png_with_overflow(html: str) -> tuple[bytes, dict]:
+    """Playwright 1080×1080 PNG + body overflow 측정.
+
+    Returns:
+        (png_bytes, {
+            "overflow_y": int,    # body.scrollHeight - 1080 (≤0이면 OK)
+            "overflow_x": int,    # body.scrollWidth  - 1080
+            "scroll_h":   int,
+            "scroll_w":   int,
+            "is_overflow": bool,  # True면 콘텐츠 잘림
+        })
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        raise RuntimeError("playwright 미설치")
+
+    html = _inject_font_fallbacks(html)
+
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as f:
+        f.write(html)
+        html_path = f.name
+
+    png_path = html_path.replace(".html", ".png")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
+            )
+            page = browser.new_page(viewport={"width": 1080, "height": 1080})
+            page.goto(f"file://{html_path}", wait_until="domcontentloaded", timeout=30000)
+            try:
+                page.evaluate("() => document.fonts.ready")
+            except Exception:
+                pass
+            page.wait_for_timeout(2500)
+
+            metrics = page.evaluate("""() => ({
+                scrollH: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+                scrollW: Math.max(document.body.scrollWidth,  document.documentElement.scrollWidth),
+            })""")
+            scroll_h = int(metrics.get("scrollH", 0))
+            scroll_w = int(metrics.get("scrollW", 0))
+
+            page.screenshot(path=png_path, clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
+            browser.close()
+
+        with open(png_path, "rb") as f:
+            png_bytes = f.read()
+
+        overflow_y = max(0, scroll_h - 1080)
+        overflow_x = max(0, scroll_w - 1080)
+        return png_bytes, {
+            "overflow_y": overflow_y,
+            "overflow_x": overflow_x,
+            "scroll_h": scroll_h,
+            "scroll_w": scroll_w,
+            # 미세한 오차 8px는 noise로 허용
+            "is_overflow": overflow_y > 8 or overflow_x > 8,
+        }
     finally:
         Path(html_path).unlink(missing_ok=True)
         Path(png_path).unlink(missing_ok=True)
