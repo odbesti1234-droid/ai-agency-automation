@@ -1396,6 +1396,74 @@ _ICON_PATHS = {
 }
 
 
+def _component_hero_image(image_url: str, palette: dict, height: int = 360, overlay: float = 0.45) -> str:
+    """배경 이미지 + 다크 그라데이션 오버레이 영역. 슬라이드 상단/중단 큰 시각 시그너처.
+
+    height: 이미지 영역 높이(px). overlay: 0~1, 어두운 오버레이 강도.
+    """
+    if not image_url:
+        return ""
+    accent = palette.get("accent", "#C9A876")
+    o = max(0.0, min(0.85, overlay))
+    return (
+        f'<div style="position:relative; width:100%; max-width:880px; height:{height}px;'
+        f' margin:24px 0; overflow:hidden; border:1px solid rgba({_hex_to_rgb(accent)},0.4);">'
+        f'<img src="{_e(image_url)}" style="width:100%; height:100%; object-fit:cover;"/>'
+        f'<div style="position:absolute; inset:0;'
+        f' background:linear-gradient(180deg, rgba(0,0,0,{o*0.6}) 0%,'
+        f' rgba(0,0,0,{o}) 60%, rgba(0,0,0,{o*1.2}) 100%);"></div>'
+        f'</div>'
+    )
+
+
+def _component_side_image(image_url: str, caption: str, palette: dict, side: str = "left") -> str:
+    """좌/우 50% 이미지 + 50% 캡션 텍스트 분할. side: "left"|"right".
+
+    이미지 카드 + 옆에 텍스트 짧게. 단지 이미지·인테리어 컨셉·기술 시각화 등 부가 정보용.
+    """
+    if not image_url:
+        return ""
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    img_html = (
+        f'<div style="flex:0 0 360px; height:360px; overflow:hidden;'
+        f' border:1px solid rgba({_hex_to_rgb(accent)},0.4);">'
+        f'<img src="{_e(image_url)}" style="width:100%; height:100%; object-fit:cover;"/></div>'
+    )
+    caption_html = (
+        f'<div style="flex:1; padding:0 28px; display:flex; flex-direction:column;'
+        f' justify-content:center; color:{on_primary}; font-size:18px; line-height:1.6;'
+        f' opacity:0.85; max-width:480px;">{_e(caption)}</div>'
+    )
+    order = (img_html, caption_html) if side == "left" else (caption_html, img_html)
+    return (
+        f'<div style="display:flex; gap:0; margin:24px 0; align-items:stretch;">'
+        f'{order[0]}{order[1]}</div>'
+    )
+
+
+def _component_image_card(image_url: str, label: str, palette: dict) -> str:
+    """단일 이미지 카드 (라벨 오버레이). 그리드용 또는 단일 강조용."""
+    if not image_url:
+        return ""
+    accent = palette.get("accent", "#C9A876")
+    label_html = (
+        f'<div style="position:absolute; left:16px; bottom:14px;'
+        f' padding:6px 12px; background:rgba(0,0,0,0.7);'
+        f' border-left:3px solid {accent}; color:#fff; font-size:13px;'
+        f' letter-spacing:0.06em; text-transform:uppercase;">{_e(label)}</div>'
+        if label else ""
+    )
+    return (
+        f'<div style="position:relative; width:100%; max-width:880px; height:420px;'
+        f' margin:24px 0; overflow:hidden; border:1px solid rgba({_hex_to_rgb(accent)},0.4);">'
+        f'<img src="{_e(image_url)}" style="width:100%; height:100%; object-fit:cover;"/>'
+        f'<div style="position:absolute; inset:0;'
+        f' background:linear-gradient(180deg, rgba(0,0,0,0.15) 60%, rgba(0,0,0,0.7) 100%);"></div>'
+        f'{label_html}</div>'
+    )
+
+
 def _component_icon_stat_grid(stats: list[dict], palette: dict) -> str:
     """아이콘+숫자+라벨 그리드. 각 stat = {"icon": "home", "value": "23", "label": "이번 달 거래"}.
 
@@ -1496,6 +1564,21 @@ def _render_components(components: Any, palette: dict) -> str:
                 stats = c.get("stats") or []
                 if isinstance(stats, list) and stats:
                     parts.append(_component_icon_stat_grid(stats, palette))
+            elif ctype == "hero_image":
+                parts.append(_component_hero_image(
+                    c.get("image_url", ""), palette,
+                    height=int(c.get("height", 360)),
+                    overlay=float(c.get("overlay", 0.45)),
+                ))
+            elif ctype == "side_image":
+                parts.append(_component_side_image(
+                    c.get("image_url", ""), c.get("caption", ""),
+                    palette, side=c.get("side", "left"),
+                ))
+            elif ctype == "image_card":
+                parts.append(_component_image_card(
+                    c.get("image_url", ""), c.get("label", ""), palette,
+                ))
             else:
                 print(f"  [render_components] unknown type='{ctype}' — skip")
         except Exception as exc:
