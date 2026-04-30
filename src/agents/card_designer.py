@@ -1252,16 +1252,196 @@ def _component_meta_source(source: str, date: str, palette: dict) -> str:
     )
 
 
+# ─────────────────────────────────────────────────────────────────
+# 정보형 시각 컴포넌트 4종 (Phase 1-3-B 4단계)
+# 정보형 카드뉴스 = 차트·인포그래픽·아이콘 필수. 텍스트만으론 짐코딩급 X.
+# 모두 SVG 직접 렌더 (Chart.js·CDN 의존 X). Playwright 즉시 렌더 가능.
+# ─────────────────────────────────────────────────────────────────
+
+def _component_big_number(value: str, unit: str, label: str, delta: str, palette: dict) -> str:
+    """인포그래픽 큰 숫자 카드. value+unit 메인, delta 화살표, label 보조.
+
+    예: value="9.2", unit="%", label="수내동 단독 상승", delta="↑ vs 강남 -1.3%"
+    """
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    delta_color = accent
+    if delta:
+        if "↓" in delta or "-" in delta[:3]:
+            delta_color = "#E07A5F"  # 다운 = 따뜻한 적
+        elif "↑" in delta or "+" in delta[:3]:
+            delta_color = "#7FB069"  # 업 = 차분한 녹
+    delta_html = (
+        f'<div style="margin-top:14px; font-size:18px; font-weight:600; color:{delta_color};'
+        f' letter-spacing:0.02em;">{_e(delta)}</div>' if delta else ""
+    )
+    label_html = (
+        f'<div style="margin-top:10px; font-size:14px; color:{on_primary}; opacity:0.55;'
+        f' letter-spacing:0.06em; text-transform:uppercase;">{_e(label)}</div>' if label else ""
+    )
+    return (
+        f'<div style="display:flex; flex-direction:column; align-items:flex-start;'
+        f' padding:32px 40px; border-left:4px solid {accent}; margin:24px 0;">'
+        f'<div style="display:flex; align-items:baseline; gap:8px;">'
+        f'<span style="font-family:\'Playfair Display\',serif; font-size:128px; font-weight:700;'
+        f' color:{accent}; line-height:1;">{_e(value)}</span>'
+        f'<span style="font-size:48px; font-weight:600; color:{accent}; opacity:0.85;">{_e(unit)}</span>'
+        f'</div>{delta_html}{label_html}</div>'
+    )
+
+
+def _component_bar_chart(rows: list[dict], palette: dict, max_value: float | None = None) -> str:
+    """SVG 막대그래프. 각 row = {"label": "수내동", "value": 9.2, "highlight": false}.
+
+    highlight=true면 accent 색, 아니면 회색. 최대 7행. value는 숫자.
+    """
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    rgb_on = _hex_to_rgb(on_primary)
+    if not rows:
+        return ""
+    rows = rows[:7]
+    try:
+        values = [float(r.get("value", 0)) for r in rows]
+    except (TypeError, ValueError):
+        return ""
+    abs_max = max(abs(v) for v in values) if values else 1.0
+    if max_value is None:
+        max_value = abs_max if abs_max > 0 else 1.0
+    bar_h = 32
+    gap = 18
+    total_h = (bar_h + gap) * len(rows) + 20
+    bar_w_max = 580
+    label_w = 140
+    items = ""
+    for i, (row, v) in enumerate(zip(rows, values)):
+        y = i * (bar_h + gap) + 10
+        is_negative = v < 0
+        ratio = abs(v) / max_value if max_value else 0
+        w = max(2, ratio * bar_w_max)
+        x_start = label_w + 12
+        if is_negative:
+            color = "#E07A5F"
+        elif row.get("highlight"):
+            color = accent
+        else:
+            color = f"rgba({rgb_on},0.32)"
+        v_text = f"{v:+.1f}" if (isinstance(v, float) and (v < 0 or row.get("show_sign"))) else f"{v:g}"
+        unit = row.get("unit", "")
+        items += (
+            f'<text x="{label_w}" y="{y + bar_h * 0.7}" text-anchor="end"'
+            f' fill="{on_primary}" font-size="14" opacity="0.75"'
+            f' style="font-family:\'Noto Sans KR\',sans-serif;">{_e(row.get("label",""))}</text>'
+            f'<rect x="{x_start}" y="{y}" width="{w:.1f}" height="{bar_h}" fill="{color}"/>'
+            f'<text x="{x_start + w + 10:.1f}" y="{y + bar_h * 0.7}" fill="{on_primary}"'
+            f' font-size="15" font-weight="700"'
+            f' style="font-family:\'Noto Sans KR\',sans-serif;">{_e(v_text)}{_e(unit)}</text>'
+        )
+    return (
+        f'<svg viewBox="0 0 880 {total_h}" width="100%" style="margin:24px 0; max-width:880px;">'
+        f'{items}</svg>'
+    )
+
+
+def _component_donut_stat(percent: float, label: str, palette: dict) -> str:
+    """SVG 도넛 통계. 0~100 percent. 가운데 큰 % + 아래 라벨.
+
+    예: percent=70, label="매도자가 호가 하향 조정"
+    """
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    rgb_on = _hex_to_rgb(on_primary)
+    try:
+        pct = max(0.0, min(100.0, float(percent)))
+    except (TypeError, ValueError):
+        return ""
+    radius = 90
+    cx, cy = 110, 110
+    circumference = 2 * 3.14159 * radius
+    dash = circumference * (pct / 100)
+    rest = circumference - dash
+    return (
+        f'<div style="display:flex; align-items:center; gap:32px; margin:24px 0;">'
+        f'<svg width="220" height="220" viewBox="0 0 220 220" style="flex-shrink:0;">'
+        f'<circle cx="{cx}" cy="{cy}" r="{radius}" fill="none"'
+        f' stroke="rgba({rgb_on},0.12)" stroke-width="20"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="{radius}" fill="none"'
+        f' stroke="{accent}" stroke-width="20" stroke-linecap="round"'
+        f' stroke-dasharray="{dash:.2f} {rest:.2f}"'
+        f' transform="rotate(-90 {cx} {cy})"/>'
+        f'<text x="{cx}" y="{cy + 14}" text-anchor="middle" fill="{on_primary}"'
+        f' font-size="46" font-weight="700"'
+        f' style="font-family:\'Playfair Display\',serif;">{pct:.0f}%</text>'
+        f'</svg>'
+        f'<div style="font-size:20px; line-height:1.5; color:{on_primary}; opacity:0.85;'
+        f' max-width:560px;">{_e(label)}</div>'
+        f'</div>'
+    )
+
+
+# 부동산·AI 도메인 SVG 아이콘 라이브러리 (단순 라인 아이콘, 컬러는 palette accent)
+_ICON_PATHS = {
+    "home":   '<path d="M4 22 L24 6 L44 22 M9 19 V40 H39 V19" stroke-width="2" stroke-linejoin="round"/>',
+    "money":  '<circle cx="24" cy="24" r="18" stroke-width="2"/><path d="M19 18 H29 M19 24 H29 M24 14 V34" stroke-width="2"/>',
+    "chart":  '<path d="M6 38 L18 26 L26 32 L40 14" stroke-width="2.4" fill="none"/><circle cx="40" cy="14" r="3"/>',
+    "growth": '<path d="M6 36 L20 22 L28 28 L42 12 M30 12 H42 V24" stroke-width="2.4" fill="none" stroke-linejoin="round"/>',
+    "key":    '<circle cx="14" cy="24" r="8" stroke-width="2"/><path d="M22 24 H42 M36 24 V32 M42 24 V30" stroke-width="2"/>',
+    "calc":   '<rect x="8" y="6" width="32" height="36" stroke-width="2" rx="2"/><rect x="14" y="12" width="20" height="6" stroke-width="2"/><circle cx="16" cy="26" r="1.5" fill="currentColor"/><circle cx="24" cy="26" r="1.5" fill="currentColor"/><circle cx="32" cy="26" r="1.5" fill="currentColor"/><circle cx="16" cy="34" r="1.5" fill="currentColor"/><circle cx="24" cy="34" r="1.5" fill="currentColor"/>',
+    "doc":    '<path d="M10 4 H30 L38 12 V44 H10 V4 Z" stroke-width="2" stroke-linejoin="round"/><path d="M30 4 V12 H38 M16 22 H32 M16 30 H32 M16 38 H26" stroke-width="2"/>',
+    "pin":    '<path d="M24 4 C16 4 10 10 10 18 C10 28 24 44 24 44 C24 44 38 28 38 18 C38 10 32 4 24 4 Z" stroke-width="2"/><circle cx="24" cy="18" r="5" stroke-width="2"/>',
+    "ai":     '<rect x="10" y="14" width="28" height="22" stroke-width="2" rx="2"/><circle cx="18" cy="24" r="2" fill="currentColor"/><circle cx="30" cy="24" r="2" fill="currentColor"/><path d="M24 14 V8 M16 36 V42 M32 36 V42 M10 22 H6 M38 22 H42 M10 28 H6 M38 28 H42" stroke-width="2"/>',
+    "data":   '<ellipse cx="24" cy="10" rx="14" ry="4" stroke-width="2" fill="none"/><path d="M10 10 V24 C10 26 16 28 24 28 C32 28 38 26 38 24 V10 M10 24 V38 C10 40 16 42 24 42 C32 42 38 40 38 38 V24" stroke-width="2" fill="none"/>',
+    "alert":  '<path d="M24 6 L42 38 H6 Z" stroke-width="2" stroke-linejoin="round"/><path d="M24 18 V28 M24 33 V35" stroke-width="2.4"/>',
+    "check":  '<circle cx="24" cy="24" r="18" stroke-width="2"/><path d="M14 24 L21 31 L34 18" stroke-width="2.4" fill="none" stroke-linejoin="round"/>',
+}
+
+
+def _component_icon_stat_grid(stats: list[dict], palette: dict) -> str:
+    """아이콘+숫자+라벨 그리드. 각 stat = {"icon": "home", "value": "23", "label": "이번 달 거래"}.
+
+    최대 4개. icon 미지원이면 'check' 폴백.
+    """
+    accent = palette.get("accent", "#C9A876")
+    on_primary = palette.get("on_primary", "#F5F0E8")
+    rgb_on = _hex_to_rgb(on_primary)
+    if not stats:
+        return ""
+    items = ""
+    for s in stats[:4]:
+        icon_name = (s.get("icon") or "check").lower()
+        path = _ICON_PATHS.get(icon_name, _ICON_PATHS["check"])
+        value = str(s.get("value", ""))
+        label = str(s.get("label", ""))
+        items += (
+            f'<div style="flex:1; min-width:160px; padding:24px 16px;'
+            f' border:1px solid rgba({rgb_on},0.12); text-align:center;">'
+            f'<svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="{accent}"'
+            f' style="margin-bottom:12px;">{path}</svg>'
+            f'<div style="font-family:\'Playfair Display\',serif; font-size:36px; font-weight:700;'
+            f' color:{on_primary}; line-height:1;">{_e(value)}</div>'
+            f'<div style="margin-top:8px; font-size:12px; color:{on_primary}; opacity:0.55;'
+            f' letter-spacing:0.06em; text-transform:uppercase;">{_e(label)}</div>'
+            f'</div>'
+        )
+    return (
+        f'<div style="display:flex; gap:14px; margin:24px 0; flex-wrap:wrap;">{items}</div>'
+    )
+
+
 def _render_components(components: Any, palette: dict) -> str:
     """slide.components → HTML.
 
     각 component dict 형식:
-      {"type": "bad_good",     "bad_label": "...", "bad_text": "...",
-                               "good_label": "...", "good_text": "..."}
-      {"type": "n_table",      "rows": [{"label": "...", "text": "..."}]}
-      {"type": "label_box",    "text": "...", "fill": false}
-      {"type": "bottom_cta",   "text": "..."}
-      {"type": "meta_source",  "source": "...", "date": "..."}
+      {"type": "bad_good",       "bad_label": "...", "bad_text": "...",
+                                 "good_label": "...", "good_text": "..."}
+      {"type": "n_table",        "rows": [{"label": "...", "text": "..."}]}
+      {"type": "label_box",      "text": "...", "fill": false}
+      {"type": "bottom_cta",     "text": "..."}
+      {"type": "meta_source",    "source": "...", "date": "..."}
+      {"type": "big_number",     "value": "9.2", "unit": "%", "label": "...", "delta": "↑ vs 강남 -1.3%"}
+      {"type": "bar_chart",      "rows": [{"label": "...", "value": 9.2, "highlight": true, "unit": "%"}]}
+      {"type": "donut_stat",     "percent": 70, "label": "..."}
+      {"type": "icon_stat_grid", "stats": [{"icon": "home", "value": "23", "label": "이번 달 거래"}]}
 
     빈 리스트나 잘못된 타입은 빈 문자열 반환 (기존 빌더 fallback 가능).
     개별 컴포넌트 렌더 실패는 silent skip — 한 개 망가져도 슬라이드 자체는 살림.
@@ -1294,6 +1474,28 @@ def _render_components(components: Any, palette: dict) -> str:
                 parts.append(_component_meta_source(
                     c.get("source", ""), c.get("date", ""), palette
                 ))
+            elif ctype == "big_number":
+                parts.append(_component_big_number(
+                    str(c.get("value", "")), str(c.get("unit", "")),
+                    str(c.get("label", "")), str(c.get("delta", "")),
+                    palette,
+                ))
+            elif ctype == "bar_chart":
+                rows = c.get("rows") or []
+                if isinstance(rows, list) and rows:
+                    parts.append(_component_bar_chart(
+                        rows, palette, max_value=c.get("max_value"),
+                    ))
+            elif ctype == "donut_stat":
+                pct = c.get("percent")
+                if pct is not None:
+                    parts.append(_component_donut_stat(
+                        pct, str(c.get("label", "")), palette,
+                    ))
+            elif ctype == "icon_stat_grid":
+                stats = c.get("stats") or []
+                if isinstance(stats, list) and stats:
+                    parts.append(_component_icon_stat_grid(stats, palette))
             else:
                 print(f"  [render_components] unknown type='{ctype}' — skip")
         except Exception as exc:

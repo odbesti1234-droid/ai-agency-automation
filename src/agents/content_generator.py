@@ -238,6 +238,18 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 
 [components 스키마] — 빈 공간 채움 + 시각 차별화의 핵심 무기. 본문이 길어질 것 같으면 무조건 components로 분해한다.
 각 원소는 dict, type별 필드:
+
+[정보형 시각 컴포넌트] — 정보 카드뉴스의 핵심. insight/tip 슬라이드는 무조건 1개+ 명시 (no_visual_data 페널티 회피).
+- `{"type": "big_number", "value": "9.2", "unit": "%", "label": "수내동 단독 상승", "delta": "↑ vs 강남 -1.3%"}`
+  → 대형 인포그래픽 숫자 카드. 메인 통계·핵심 변화율에 사용. unit "%·억·건·명·%P" 등.
+- `{"type": "bar_chart", "rows": [{"label": "수내동", "value": 9.2, "unit": "%", "highlight": true}, {"label": "강남", "value": -1.3, "unit": "%"}, {"label": "송파", "value": -0.8, "unit": "%"}]}`
+  → SVG 막대그래프 (3~7행). 지역·단지·기간 비교에 사용. value는 숫자, highlight=true면 accent 색.
+- `{"type": "donut_stat", "percent": 70, "label": "매도자가 호가 하향 조정"}`
+  → 도넛 % 통계. 비율·점유율 단일 수치 강조에 사용.
+- `{"type": "icon_stat_grid", "stats": [{"icon": "home", "value": "23", "label": "이번 달 거래"}, {"icon": "growth", "value": "+5%", "label": "호가 상승"}, {"icon": "money", "value": "9.2억", "label": "평균 거래가"}]}`
+  → 3~4개 아이콘+숫자+라벨 그리드. 다중 통계 한눈 보기. icon: home/money/chart/growth/key/calc/doc/pin/ai/data/alert/check 중 1개.
+
+[구조 시각 컴포넌트] — 본문 분해·비교·신뢰 신호.
 - `{"type": "bad_good", "bad_label": "✗ 호가", "bad_text": "9억 5천", "good_label": "✓ 실거래", "good_text": "8억 3천"}`
   → 좌(BAD) vs 우(GOOD) 비교박스. 가격 갭·이전 vs 이후·잘못된 vs 올바른 패턴에 사용.
 - `{"type": "n_table", "rows": [{"label": "TIP01", "text": "..."}, {"label": "TIP02", "text": "..."}]}`
@@ -250,9 +262,10 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
   → 메타 출처 박스. benchmark·통계 슬라이드 신뢰 신호.
 
 **필수 사용 룰**:
-- 본문 슬라이드 N장 중 **최소 2장은 components 명시** (BAD/GOOD 또는 n_table 우선).
+- **insight/tip 슬라이드 N장 중 최소 1장 이상은 정보형 시각 컴포넌트(big_number/bar_chart/donut_stat/icon_stat_grid/n_table) 명시 — 안 하면 no_visual_data fail.**
+- 텍스트만 있는 정보 카드뉴스 = 슬롭. 차트·인포그래픽이 시각 핵심.
 - subtext 75자/3줄 초과 예상 시 무조건 components로 분해 (페널티 회피).
-- 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제.
+- 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제 (예: bar_chart + big_number + n_table 조합).
 
 source 또는 date가 있으면 save/benchmark 슬라이드 하단에 메타 출처 박스가 자동 노출된다. AI 슬롭 차단 핵심 신호이므로 benchmark·통계 인용 슬라이드는 무조건 채워라.
 
