@@ -653,13 +653,16 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
     raw_sub = slide.get("subtext", "") or slide.get("text_content", "") or ""
     dots_html = _make_dots(total, slide_num, accent)
 
-    bullets = [l.strip() for l in raw_sub.split("\n") if l.strip()][:3]
-    if not bullets and raw_sub:
-        bullets = [raw_sub[:70]]
-
-    bullet_items = "".join(
-        f'<div class="pain-item">{_e(b[:70])}</div>' for b in bullets
-    )
+    components_html = _render_components(slide.get("components"), palette)
+    if components_html:
+        bullet_items = f'<div class="pain-components">{components_html}</div>'
+    else:
+        bullets = [l.strip() for l in raw_sub.split("\n") if l.strip()][:3]
+        if not bullets and raw_sub:
+            bullets = [raw_sub[:70]]
+        bullet_items = "".join(
+            f'<div class="pain-item">{_e(b[:70])}</div>' for b in bullets
+        )
     hl_fs = 50 if len(headline) <= 16 else (42 if len(headline) <= 22 else 34)
 
     return f"""<!DOCTYPE html>
@@ -704,6 +707,7 @@ def _slide_problem(slide: dict, slide_num: int, total: int, brand_name: str, pal
     margin-bottom:32px; max-width:880px;
   }}
   .pain-list {{ display:flex; flex-direction:column; gap:16px; }}
+  .pain-components {{ width:100%; max-width:880px; }}
   .pain-item {{
     border-left:4px solid {secondary};
     padding:20px 26px;
@@ -769,8 +773,11 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     # 헤드라인이 짧으면 ghost_text에 보여줄 키워드가 따로 있을 가능성 큼
     hl_fs = 48 if len(headline) <= 16 else (40 if len(headline) <= 22 else 33)
 
+    components_html = _render_components(slide.get("components"), palette)
     data_block = ""
-    if subtext:
+    if components_html:
+        data_block = f'<div class="components-block">{components_html}</div>'
+    elif subtext:
         data_block = f'<div class="data-box"><div class="data-text">{_e(subtext[:110])}</div></div>'
 
     return f"""<!DOCTYPE html>
@@ -784,6 +791,7 @@ def _slide_insight(slide: dict, slide_num: int, total: int, brand_name: str, pal
     padding:100px 90px 90px;
     overflow:hidden;
   }}
+  .components-block {{ max-width:880px; }}
   /* 전체 캔버스를 채우는 대형 장식 숫자 — 배경 텍스처 역할 */
   .bg-num {{
     position:absolute; top:50%; right:-60px;
@@ -903,9 +911,13 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
         f'<path d="M10 4h28v40l-14-10L10 44V4z"/></svg>'
     )
 
-    benefit_block = (
-        f'<div class="benefit">{_e(subtext[:80])}</div>' if subtext else ""
-    )
+    components_html = _render_components(slide.get("components"), palette)
+    if components_html:
+        benefit_block = f'<div class="benefit-components">{components_html}</div>'
+    else:
+        benefit_block = (
+            f'<div class="benefit">{_e(subtext[:80])}</div>' if subtext else ""
+        )
 
     # benchmark/save 슬라이드 신뢰 신호 — slide_script가 source/date 명시하면 메타 출처 박스 인라인 노출
     source = (slide.get("source") or "").strip()
@@ -957,6 +969,7 @@ def _slide_save(slide: dict, slide_num: int, total: int, brand_name: str, palett
     opacity:0.7; text-align:center; line-height:1.6;
     max-width:760px; margin-bottom:0;
   }}
+  .benefit-components {{ width:100%; max-width:880px; }}
   .meta-source {{
     margin-top:24px;
     display:inline-block;
@@ -1237,6 +1250,55 @@ def _component_meta_source(source: str, date: str, palette: dict) -> str:
         f'<span style="color:{on_primary}; opacity:0.6; font-size:11px; letter-spacing:0.05em;">'
         f'{_e(date)} · {_e(source)}</span></div>'
     )
+
+
+def _render_components(components: Any, palette: dict) -> str:
+    """slide.components → HTML.
+
+    각 component dict 형식:
+      {"type": "bad_good",     "bad_label": "...", "bad_text": "...",
+                               "good_label": "...", "good_text": "..."}
+      {"type": "n_table",      "rows": [{"label": "...", "text": "..."}]}
+      {"type": "label_box",    "text": "...", "fill": false}
+      {"type": "bottom_cta",   "text": "..."}
+      {"type": "meta_source",  "source": "...", "date": "..."}
+
+    빈 리스트나 잘못된 타입은 빈 문자열 반환 (기존 빌더 fallback 가능).
+    개별 컴포넌트 렌더 실패는 silent skip — 한 개 망가져도 슬라이드 자체는 살림.
+    """
+    if not components or not isinstance(components, list):
+        return ""
+    parts: list[str] = []
+    for c in components:
+        if not isinstance(c, dict):
+            continue
+        ctype = (c.get("type") or "").lower().strip()
+        try:
+            if ctype == "bad_good":
+                parts.append(_component_bad_good(
+                    c.get("bad_label", ""), c.get("bad_text", ""),
+                    c.get("good_label", ""), c.get("good_text", ""),
+                    palette,
+                ))
+            elif ctype == "n_table":
+                rows = c.get("rows") or []
+                if isinstance(rows, list) and rows:
+                    parts.append(_component_n_table(rows, palette))
+            elif ctype == "label_box":
+                parts.append(_component_label_box(
+                    c.get("text", ""), palette, fill=bool(c.get("fill", False))
+                ))
+            elif ctype == "bottom_cta":
+                parts.append(_component_bottom_band_cta(c.get("text", ""), palette))
+            elif ctype == "meta_source":
+                parts.append(_component_meta_source(
+                    c.get("source", ""), c.get("date", ""), palette
+                ))
+            else:
+                print(f"  [render_components] unknown type='{ctype}' — skip")
+        except Exception as exc:
+            print(f"  [render_components] {ctype} 렌더 실패 — skip: {exc}")
+    return "\n".join(parts)
 
 
 # ─────────────────────────────────────────────────────────────────

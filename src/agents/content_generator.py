@@ -234,13 +234,32 @@ visual_direction에 사용 가능한 6종 컴포넌트 이름 (명시 권장):
 - `category_label` (insight/tip): 상단·뱃지 라벨 텍스트 (≤24자, 대문자 권장). 예: "MARKET INSIGHT", "TIP 02", "DESIGN". 미명시 시 "INSIGHT".
 - `source`         (save/benchmark): 출처 기관·매체. 예: "KB부동산", "한국감정원", "통계청". benchmark·근거형 슬라이드는 반드시 명시.
 - `date`           (save/benchmark): 출처 발행일 (YYYY.MM.DD 형식 권장). 예: "2026.04.15".
+- `components`     (insight/tip/save/problem): 시각 컴포넌트 명시 배열 — 빌더가 직접 렌더한다. **본문 분해 룰의 핵심 도구**. 명시하면 subtext 박스 대신 컴포넌트 영역으로 대체된다.
+
+[components 스키마] — 빈 공간 채움 + 시각 차별화의 핵심 무기. 본문이 길어질 것 같으면 무조건 components로 분해한다.
+각 원소는 dict, type별 필드:
+- `{"type": "bad_good", "bad_label": "✗ 호가", "bad_text": "9억 5천", "good_label": "✓ 실거래", "good_text": "8억 3천"}`
+  → 좌(BAD) vs 우(GOOD) 비교박스. 가격 갭·이전 vs 이후·잘못된 vs 올바른 패턴에 사용.
+- `{"type": "n_table", "rows": [{"label": "TIP01", "text": "..."}, {"label": "TIP02", "text": "..."}]}`
+  → 라벨박스 N항목 표 (최대 7행). 단지 비교·구간별 수치·항목 나열에 사용. 4줄 본문보다 훨씬 강력.
+- `{"type": "label_box", "text": "MARKET INSIGHT", "fill": false}`
+  → 카테고리 라벨박스. fill=true면 배경 채움(컬러풀 브랜드), false면 외곽선만(럭셔리 브랜드).
+- `{"type": "bottom_cta", "text": "DM 주세요"}`
+  → 하단 띠 CTA. 단일 행동 강조.
+- `{"type": "meta_source", "source": "KB부동산 주간시계열", "date": "2026.04.15"}`
+  → 메타 출처 박스. benchmark·통계 슬라이드 신뢰 신호.
+
+**필수 사용 룰**:
+- 본문 슬라이드 N장 중 **최소 2장은 components 명시** (BAD/GOOD 또는 n_table 우선).
+- subtext 75자/3줄 초과 예상 시 무조건 components로 분해 (페널티 회피).
+- 같은 visual_direction 패턴 ≥ 2장은 슬롭. components type을 다양하게 섞어 변주 강제.
 
 source 또는 date가 있으면 save/benchmark 슬라이드 하단에 메타 출처 박스가 자동 노출된다. AI 슬롭 차단 핵심 신호이므로 benchmark·통계 인용 슬라이드는 무조건 채워라.
 
 [본문 분해 룰 — 시각 컴포넌트 단위 (필수)]
 client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따른다. 일반 룰:
 - 각 슬라이드의 text_content는 **3줄 이하** 강제 (planb_pm 02~05 빽빽 본문 회피)
-- subtext의 한 단락은 3줄 이하 (4~5줄 한 호흡 금지)
+- subtext의 한 단락은 3줄 이하, 75자 이하 (4~5줄 한 호흡 = 페널티)
 - 본문 슬라이드 N장 중 **같은 visual_direction 패턴 ≥ 2장 = 슬롭 페널티** (시각 동일성 회피, 인사이트 슬라이드 사이 변주 강제)
 - visual_direction에 다음 중 **1개 컴포넌트 명시** 권장: BAD/GOOD 비교박스 / N항목 표 / ghost 큰 숫자 배경 / 라벨박스 / 하단 띠 CTA / 메타 출처 박스
 - insight·tip 슬라이드 중 **최소 1장은 메타 출처 박스 사용** (벤치마크/근거 부재 = 경고)
@@ -321,23 +340,33 @@ client_context에 visual-components-catalog.md가 주입돼 있으면 우선 따
     "slide": 3,
     "role": "insight",
     "headline": "수내동만 9.2% 단독 상승",
-    "subtext": "강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자",
-    "visual_direction": "다크 그린 배경, 좌측 9.2% 큰 숫자(120pt), 우측 강남·송파·수내동 비교 막대그래프, 우하단 KB부동산 출처 워터마크",
+    "subtext": "강남·송파는 마이너스",
+    "visual_direction": "다크 그린 배경, 좌측 9.2% 큰 숫자(120pt), 우측 비교박스",
     "ghost_text": "9.2%",
     "category_label": "MARKET INSIGHT",
+    "components": [
+      {"type": "bad_good", "bad_label": "강남·송파", "bad_text": "-1.3% · -0.8% 약세", "good_label": "수내동", "good_text": "+9.2% 단독 상승"}
+    ],
     "emotion_tone": "흥미",
-    "text_content": "수내동만 9.2% 단독 상승 강남 -1.3% / 송파 -0.8%인데 수내동만 단독 상승. 판교 IT 인구 유입 + 학군 + 신축 부족 3박자"
+    "text_content": "수내동만 9.2% 단독 상승 강남·송파는 마이너스"
   },
   {
     "slide": 4,
     "role": "insight",
     "headline": "지금 들어갈 3개 단지",
-    "subtext": "양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중",
-    "visual_direction": "다크 배경, 단지명 3개 가로 카드 배치, 각 카드 상단 가격·중앙 평수·하단 학군 정보, 카드 사이 1px 골드 디바이더",
+    "subtext": "분기 들어 호가 회복 중",
+    "visual_direction": "다크 배경, 단지명 3개 N항목 표 배치",
     "ghost_text": "TIP 02",
     "category_label": "ENTRY POINT",
+    "components": [
+      {"type": "n_table", "rows": [
+        {"label": "양지마을 1", "text": "9.2억 · 32평 · 학군A"},
+        {"label": "푸른마을 신성", "text": "9.5억 · 34평 · 학군A"},
+        {"label": "까치마을 1", "text": "9.8억 · 33평 · 학군B"}
+      ]}
+    ],
     "emotion_tone": "신뢰",
-    "text_content": "지금 들어갈 3개 단지 양지마을 1단지 9.2억 / 푸른마을 신성 9.5억 / 까치마을 1단지 9.8억 — 분기 들어 호가 회복 중"
+    "text_content": "지금 들어갈 3개 단지 분기 들어 호가 회복 중"
   },
   {
     "slide": 5,
