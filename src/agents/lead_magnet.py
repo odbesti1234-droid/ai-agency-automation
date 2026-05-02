@@ -65,13 +65,18 @@ _GOOGLE_FONTS_URL = (
     "&family=Noto+Serif+KR:wght@400;600;700"
     "&display=swap"
 )
+_PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
+
+_HEADING_STACK = "'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif"
+_BODY_STACK = "'Pretendard','Noto Sans KR','Malgun Gothic',sans-serif"
 
 _BASE_CSS = f"""
   @import url('{_GOOGLE_FONTS_URL}');
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  @import url('{_PRETENDARD_CSS}');
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; word-break: keep-all; overflow-wrap: anywhere; }}
   body {{
     width: 1080px; height: 1080px; overflow: hidden;
-    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: {_BODY_STACK};
   }}
 """
 
@@ -167,8 +172,8 @@ def _lm_slide_hook(
     padding:6px 18px; border-radius:2px;
   }}
   .hook {{
-    font-family:'Noto Serif KR',serif;
-    font-size:68px; font-weight:700; color:#F5F0E8;
+    font-family:{_HEADING_STACK};
+    font-size:88px; font-weight:900; letter-spacing:-2px; color:#F5F0E8;
     text-align:center; line-height:1.3;
     position:relative; z-index:2;
   }}
@@ -231,9 +236,9 @@ def _lm_slide_tease(
     letter-spacing:5px; text-transform:uppercase; margin-bottom:24px;
   }}
   .title {{
-    font-family:'Noto Serif KR',serif;
-    font-size:46px; font-weight:700; color:#F5F0E8;
-    line-height:1.3; margin-bottom:50px;
+    font-family:{_HEADING_STACK};
+    font-size:60px; font-weight:900; letter-spacing:-1.5px; color:#F5F0E8;
+    line-height:1.25; margin-bottom:50px;
   }}
   .item {{
     display:flex; align-items:baseline; gap:24px;
@@ -278,11 +283,11 @@ def _lm_slide_preview(
     rgb = _hex_to_rgb(accent)
 
     items_html = ""
-    for b in bullets[:4]:
+    for b in bullets[:2]:
         items_html += (
             f'<div class="bullet">'
             f'<span class="dot" style="color:{accent};">&#9632;</span>'
-            f'<span>{_e(b[:60])}</span>'
+            f'<span>{_e(b[:80])}</span>'
             f'</div>'
         )
 
@@ -312,15 +317,15 @@ def _lm_slide_preview(
     padding:5px 14px; letter-spacing:2px; border:1px solid rgba({rgb},0.3);
   }}
   .heading {{
-    font-family:'Noto Serif KR',serif;
-    font-size:44px; font-weight:700; color:#F5F0E8;
-    line-height:1.3; margin-top:60px; margin-bottom:44px;
+    font-family:{_HEADING_STACK};
+    font-size:64px; font-weight:900; letter-spacing:-1.5px; color:#F5F0E8;
+    line-height:1.25; margin-top:60px; margin-bottom:56px;
   }}
   .bullet {{
-    display:flex; align-items:flex-start; gap:20px;
-    margin-bottom:28px; font-size:26px; color:#F5F0E8; line-height:1.4;
+    display:flex; align-items:flex-start; gap:24px;
+    margin-bottom:36px; font-size:36px; font-weight:500; color:#F5F0E8; line-height:1.45;
   }}
-  .dot {{ font-size:10px; margin-top:10px; min-width:14px; }}
+  .dot {{ font-size:14px; margin-top:14px; min-width:18px; }}
   .more {{
     margin-top:auto; font-size:18px; color:{accent}; opacity:0.7;
     font-style:italic;
@@ -374,8 +379,8 @@ def _lm_slide_blur_cta(
     pointer-events:none;
   }}
   .title {{
-    font-family:'Noto Serif KR',serif;
-    font-size:40px; font-weight:700; color:#F5F0E8;
+    font-family:{_HEADING_STACK};
+    font-size:56px; font-weight:900; letter-spacing:-1.5px; color:#F5F0E8;
     text-align:center; margin-bottom:40px;
   }}
   .blur-box {{
@@ -386,7 +391,7 @@ def _lm_slide_blur_cta(
     pointer-events:none;
   }}
   .blurred-item {{
-    font-size:24px; color:#F5F0E8; margin-bottom:16px;
+    font-size:32px; font-weight:500; color:#F5F0E8; margin-bottom:18px;
     opacity:0.7;
   }}
   .unlock-box {{
@@ -452,9 +457,9 @@ def _lm_slide_dm_cta(
     margin-bottom:28px;
   }}
   .main {{
-    font-family:'Noto Serif KR',serif;
-    font-size:54px; font-weight:700; color:#F5F0E8;
-    line-height:1.35; margin-bottom:16px;
+    font-family:{_HEADING_STACK};
+    font-size:72px; font-weight:900; letter-spacing:-1.5px; color:#F5F0E8;
+    line-height:1.25; margin-bottom:16px;
   }}
   .keyword-box {{
     display:inline-block;
@@ -527,6 +532,150 @@ def render_lm_slide(html: str) -> bytes:
         png = page.screenshot(clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
         browser.close()
     return png
+
+
+# ─────────────────────────────────────────────────────────────────
+# Freestyle 위임 (Sonnet 4.6에 6슬라이드 풀 디자인 위임) + best-of-N
+# ─────────────────────────────────────────────────────────────────
+
+def _build_lm_freestyle_concepts(
+    *,
+    hook: str,
+    tease_title: str,
+    tease_contents: list[str],
+    preview1_heading: str,
+    preview1_bullets: list[str],
+    preview2_heading: str,
+    preview2_bullets: list[str],
+    blurred_items: list[str],
+    keyword: str,
+    brand_photo_url: str | None,
+) -> list[dict]:
+    """lead_magnet LM 데이터 → freestyle slide_concepts 6장 변환."""
+    return [
+        {
+            "role": "hook",
+            "headline": hook,
+            "subtext": f"댓글에 '{keyword}' 남기면 드립니다",
+            "data": "",
+            "vision_brief": "캐러셀 첫 장. 압도적 큰 타이포 한 메시지 강타. 미니멀. SWIPE→ 안내 하단. 배경 사진 있으면 어둡게 깔고 텍스트 위로.",
+        },
+        {
+            "role": "tease",
+            "headline": tease_title,
+            "subtext": "이 자료에 담긴 내용",
+            "data": "\n".join(f"{i+1:02d}. {c}" for i, c in enumerate(tease_contents[:6])),
+            "vision_brief": "안에 무엇이 있는지 보여주는 목차 슬라이드. 6개 항목 번호 매긴 리스트 또는 그리드. 각 항목 시각 위계 일관. FOMO 유발.",
+        },
+        {
+            "role": "insight",
+            "headline": preview1_heading,
+            "subtext": preview1_bullets[0][:80] if preview1_bullets else "",
+            "data": preview1_bullets[1][:80] if len(preview1_bullets) > 1 else "",
+            "vision_brief": "1슬라이드 1메시지. 큰 헤딩 + 핵심 한 줄 + 보조 한 줄. 4불릿 금지. 우측 또는 하단에 빈 공간 두지 말고 시각 강조 활용. 하단 '→ 전체 자료는 댓글로 신청' 작게.",
+        },
+        {
+            "role": "insight",
+            "headline": preview2_heading,
+            "subtext": preview2_bullets[0][:80] if preview2_bullets else "",
+            "data": preview2_bullets[1][:80] if len(preview2_bullets) > 1 else "",
+            "vision_brief": "preview1과 다른 레이아웃 (시퀀스 단조 금지). 같은 1메시지 룰. 하단 '→ 전체 자료는 댓글로 신청' 작게.",
+        },
+        {
+            "role": "blur",
+            "headline": "나머지 정보는…",
+            "subtext": f"댓글에 '{keyword}' 남기면 잠금 해제!",
+            "data": "\n".join(f"• {b[:50]}" for b in blurred_items[:4]),
+            "vision_brief": "잠금된 정보 4개 (CSS filter:blur(5px) 또는 텍스트 흐리게). 호기심 극대화. 하단에 강한 CTA 버튼 박스 (액센트 색).",
+        },
+        {
+            "role": "cta",
+            "headline": "아래 댓글에",
+            "subtext": f"'{keyword}'",
+            "data": "STEP 1 — 댓글 입력 / STEP 2 — 자동 DM 발송 / STEP 3 — 전체 자료 무료 확인",
+            "vision_brief": "최종 행동 유도. 키워드 큰 박스 강조 (액센트 배경). 3 STEP 안내 박스. 하단 '문서는 DM으로 전달됩니다' 미세 안내.",
+        },
+    ]
+
+
+def _vision_score_carousel(pngs: list[bytes]) -> dict:
+    """vision_evaluator 호출 (실패 시 score 0 반환, raise 안 함)."""
+    try:
+        from src.agents.vision_evaluator import evaluate_carousel_design  # noqa: PLC0415
+        return evaluate_carousel_design(pngs)
+    except Exception as exc:
+        return {"score": 0, "breakdown": {}, "notes": f"vision eval 실패: {exc}"}
+
+
+def generate_freestyle_lm_carousel(
+    *,
+    client_slug: str,
+    brand_voice: dict,
+    concepts: list[dict],
+    photo_urls: list[str | None],
+    samples: int = 1,
+) -> dict:
+    """lead_magnet 6장을 freestyle (Sonnet 4.6) 위임 + best-of-N 선택.
+
+    samples=1 → 단일 시도 / samples≥2 → N 샘플 병렬 + vision 최고 선택
+    Returns: {
+      "htmls":  [{"html","rationale","attempts"}, ...],
+      "pngs":   [bytes, ...],
+      "vision": {"score","breakdown","notes"},
+      "history":[{"sample_idx","score","notes"}, ...],
+    }
+    """
+    from src.agents.freestyle_designer import generate_freestyle_carousel_safe  # noqa: PLC0415
+
+    if samples <= 1:
+        out = generate_freestyle_carousel_safe(
+            slide_concepts=concepts,
+            brand_voice=brand_voice,
+            photo_urls=photo_urls,
+            client_slug=client_slug,
+        )
+        vision = _vision_score_carousel(out["pngs"])
+        return {
+            "htmls": out["results"],
+            "pngs": out["pngs"],
+            "vision": vision,
+            "history": [{"sample_idx": 0, "score": vision.get("score", 0), "notes": vision.get("notes", "")[:200]}],
+        }
+
+    # best-of-N: N 샘플 병렬 → vision 평가 → 최고점 선택
+    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
+    def _one_sample(_i: int) -> tuple[int, dict, list[bytes]]:
+        out = generate_freestyle_carousel_safe(
+            slide_concepts=concepts,
+            brand_voice=brand_voice,
+            photo_urls=photo_urls,
+            client_slug=client_slug,
+        )
+        return _i, {"results": out["results"], "pngs": out["pngs"]}, out["pngs"]
+
+    samples_data: list[tuple[int, dict, dict]] = []  # (idx, {results,pngs}, vision)
+    with ThreadPoolExecutor(max_workers=min(samples, 3)) as ex:
+        futs = [ex.submit(_one_sample, i) for i in range(samples)]
+        for fut in as_completed(futs):
+            idx, payload, pngs = fut.result()
+            vision = _vision_score_carousel(pngs)
+            samples_data.append((idx, payload, vision))
+            print(f"[lead_magnet:freestyle] sample {idx+1}/{samples} vision={vision.get('score', 0)}")
+
+    samples_data.sort(key=lambda t: t[2].get("score", 0), reverse=True)
+    best_idx, best_payload, best_vision = samples_data[0]
+    history = [
+        {"sample_idx": idx, "score": v.get("score", 0), "notes": (v.get("notes") or "")[:200]}
+        for idx, _, v in sorted(samples_data, key=lambda t: t[0])
+    ]
+    print(f"[lead_magnet:freestyle] best = sample {best_idx+1} (score {best_vision.get('score', 0)})")
+    return {
+        "htmls": best_payload["results"],
+        "pngs": best_payload["pngs"],
+        "vision": best_vision,
+        "history": history,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -655,14 +804,20 @@ def _generate_lm_content(
 - 모호한 약속어 금지: "~더라고요", "~인 것 같아요", 단순 명사형
 - "N가지" 약속 어구는 hook에서 사용 금지 (모호 + tease_contents 길이와 어긋날 위험). 사용하면 tease_contents 정확히 N개여야 하며 그 외에는 약속어 빼라.
 
+📌 **1슬라이드 1메시지 룰 (강제)**
+- preview1_bullets / preview2_bullets는 **정확히 2개**. 4개 만들면 시각 위계 무너짐 (인스타 1초 시선 흐름).
+- 첫 번째 bullet = **핵심 한 줄** (50자 이내, 구체 수치/액션 포함)
+- 두 번째 bullet = **보조/근거 한 줄** (60자 이내, 어떻게/얼마나/왜 1개)
+- 단조 나열 금지. 두 줄이 "주장 + 증거" 구조여야 함.
+
 {{
   "hook": "20자 이내 훅 (위 룰 준수)",
   "tease_title": "자료 안에 담긴 내용 제목 (30자 이내, 구어체)",
   "tease_contents": ["목차 항목 6개, 각 25자 이내, 자연스러운 말투. 만약 hook에 'N가지' 있으면 정확히 N개"],
   "preview1_heading": "미리보기1 소제목 (20자 이내, 구어체)",
-  "preview1_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용, 없는 수치 창작 금지"],
+  "preview1_bullets": ["정확히 2개. [0]=핵심 한 줄(50자 이내, 수치/액션), [1]=보조 한 줄(60자 이내, 근거/방법). 4개 절대 금지."],
   "preview2_heading": "미리보기2 소제목 (20자 이내, 구어체)",
-  "preview2_bullets": ["실제 팁 3-4개, 각 35자 이내, 바로 써먹을 수 있는 구체적 내용, 없는 수치 창작 금지"],
+  "preview2_bullets": ["정확히 2개. [0]=핵심 한 줄(50자 이내, 수치/액션), [1]=보조 한 줄(60자 이내, 근거/방법). 4개 절대 금지."],
   "blurred_items": ["블러 처리할 정보 4개, 각 30자 이내, 독자가 너무 궁금해할 것들"],
   "notion_title": "주제를 요약한 한국어 제목 (30자 이내, 날짜·@·특수기호 없음)",
   "notion_sections": [
@@ -951,42 +1106,90 @@ def run(
     else:
         print(f"[lead_magnet:{client_slug}] Notion 건너뜀 (env 미설정)")
 
-    # 슬라이드 HTML 생성
+    # 슬라이드 생성 — Freestyle (Sonnet 4.6 위임) 또는 결정적 fallback
+    use_freestyle = os.environ.get("LEAD_MAGNET_FREESTYLE", "1") == "1"
+    samples = int(os.environ.get("LEAD_MAGNET_SAMPLES", "3"))
     palette = _brand_palette(brand_voice)
     tease_contents = lm.get("tease_contents", [])
-    slides_html: list[str] = [
-        _lm_slide_hook(hook, client_name, palette, keyword, brand_photo_url),
-        _lm_slide_tease(lm.get("tease_title", topic), tease_contents, client_name, palette, 2, 6),
-        _lm_slide_preview(lm.get("preview1_heading", "핵심 정보 1"), lm.get("preview1_bullets", []), client_name, palette, 3, 6, 1),
-        _lm_slide_preview(lm.get("preview2_heading", "핵심 정보 2"), lm.get("preview2_bullets", []), client_name, palette, 4, 6, 2),
-        _lm_slide_blur_cta(lm.get("blurred_items", []), client_name, palette, keyword),
-        _lm_slide_dm_cta(keyword, client_name, palette, notion_url),
-    ]
-    print(f"[lead_magnet:{client_slug}] {len(slides_html)}장 슬라이드 HTML 생성 완료")
-
-    # 렌더링 + 업로드
     lm_id = str(uuid.uuid4())
+    labels = ["hook", "tease", "preview1", "preview2", "blur", "cta"]
     slide_urls: list[str] = []
+    freestyle_meta: dict = {}
 
-    for s_idx, slide_html in enumerate(slides_html):
-        labels = ["hook", "tease", "preview1", "preview2", "blur", "cta"]
-        label = labels[s_idx] if s_idx < len(labels) else f"s{s_idx}"
-        print(f"[lead_magnet:{client_slug}] [{s_idx+1}/{len(slides_html)}] {label} 렌더링...")
-        for attempt in range(1, 4):
-            try:
-                png = render_lm_slide(slide_html)
+    if use_freestyle:
+        print(f"[lead_magnet:{client_slug}] freestyle 모드 (samples={samples}) — Sonnet 4.6 위임 + best-of-N")
+        concepts = _build_lm_freestyle_concepts(
+            hook=hook,
+            tease_title=lm.get("tease_title", topic),
+            tease_contents=tease_contents,
+            preview1_heading=lm.get("preview1_heading", "핵심 정보 1"),
+            preview1_bullets=lm.get("preview1_bullets", []),
+            preview2_heading=lm.get("preview2_heading", "핵심 정보 2"),
+            preview2_bullets=lm.get("preview2_bullets", []),
+            blurred_items=lm.get("blurred_items", []),
+            keyword=keyword,
+            brand_photo_url=brand_photo_url,
+        )
+        photo_urls = [brand_photo_url] + [None] * (len(concepts) - 1)
+
+        try:
+            fs_out = generate_freestyle_lm_carousel(
+                client_slug=client_slug,
+                brand_voice=brand_voice,
+                concepts=concepts,
+                photo_urls=photo_urls,
+                samples=samples,
+            )
+            for s_idx, png_bytes in enumerate(fs_out["pngs"]):
+                label = labels[s_idx] if s_idx < len(labels) else f"s{s_idx}"
+                if not png_bytes:
+                    print(f"  → {label} freestyle 결과 비어있음 — 결정적 fallback")
+                    raise RuntimeError(f"empty png at slide {s_idx}")
                 path = f"lead-magnets/{client_id}/{lm_id}_{label}.png"
-                url = upload_png(png, path)
+                url = upload_png(png_bytes, path)
                 slide_urls.append(url)
-                print(f"  → {label} 업로드 완료 ({len(png)//1024}KB)")
-                break
-            except Exception as e:
-                print(f"  → 시도 {attempt}/3 실패: {e}")
-                if attempt < 3:
-                    time.sleep(2 ** attempt)
-        if len(slide_urls) <= s_idx:
-            if s_idx == 0:
-                return {"status": "error", "error": "커버 슬라이드 렌더링 실패"}
+                print(f"  → {label} freestyle 업로드 ({len(png_bytes)//1024}KB)")
+            freestyle_meta = {
+                "vision_score": fs_out["vision"].get("score", 0),
+                "vision_breakdown": fs_out["vision"].get("breakdown", {}),
+                "vision_notes": fs_out["vision"].get("notes", "")[:500],
+                "samples_history": fs_out["history"],
+            }
+            print(f"[lead_magnet:{client_slug}] freestyle vision={freestyle_meta['vision_score']}")
+        except Exception as e:
+            print(f"[lead_magnet:{client_slug}] freestyle 실패 → 결정적 fallback: {e}")
+            slide_urls = []  # 부분 성공 무효화
+
+    if not slide_urls:
+        # 결정적 fallback (or use_freestyle=0)
+        slides_html: list[str] = [
+            _lm_slide_hook(hook, client_name, palette, keyword, brand_photo_url),
+            _lm_slide_tease(lm.get("tease_title", topic), tease_contents, client_name, palette, 2, 6),
+            _lm_slide_preview(lm.get("preview1_heading", "핵심 정보 1"), lm.get("preview1_bullets", []), client_name, palette, 3, 6, 1),
+            _lm_slide_preview(lm.get("preview2_heading", "핵심 정보 2"), lm.get("preview2_bullets", []), client_name, palette, 4, 6, 2),
+            _lm_slide_blur_cta(lm.get("blurred_items", []), client_name, palette, keyword),
+            _lm_slide_dm_cta(keyword, client_name, palette, notion_url),
+        ]
+        print(f"[lead_magnet:{client_slug}] {len(slides_html)}장 결정적 HTML 생성")
+
+        for s_idx, slide_html in enumerate(slides_html):
+            label = labels[s_idx] if s_idx < len(labels) else f"s{s_idx}"
+            print(f"[lead_magnet:{client_slug}] [{s_idx+1}/{len(slides_html)}] {label} 렌더링...")
+            for attempt in range(1, 4):
+                try:
+                    png = render_lm_slide(slide_html)
+                    path = f"lead-magnets/{client_id}/{lm_id}_{label}.png"
+                    url = upload_png(png, path)
+                    slide_urls.append(url)
+                    print(f"  → {label} 업로드 완료 ({len(png)//1024}KB)")
+                    break
+                except Exception as e:
+                    print(f"  → 시도 {attempt}/3 실패: {e}")
+                    if attempt < 3:
+                        time.sleep(2 ** attempt)
+            if len(slide_urls) <= s_idx:
+                if s_idx == 0:
+                    return {"status": "error", "error": "커버 슬라이드 렌더링 실패"}
 
     cover_url = slide_urls[0] if slide_urls else None
 

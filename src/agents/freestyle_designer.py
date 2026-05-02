@@ -13,13 +13,76 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 from dotenv import load_dotenv
 
+from src.agents.reference_harvester import has_references, load_references_as_anthropic_blocks
+from src.utils.client_context import load_client_context
+
 load_dotenv()
 
 _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 _MODEL = "claude-sonnet-4-5-20250929"  # Sonnet 4.6 alias
 
+# 캐시: 클라이언트별 reference image 블록 — 슬라이드 N장 동안 재사용
+_REF_CACHE: dict[str, list[dict]] = {}
+# 캐시: 클라이언트별 design-style-guide.md 텍스트
+_CTX_CACHE: dict[str, str] = {}
+
+
+def _get_client_context(client_slug: str | None) -> str:
+    if not client_slug:
+        return ""
+    if client_slug in _CTX_CACHE:
+        return _CTX_CACHE[client_slug]
+    ctx = load_client_context(client_slug) or ""
+    _CTX_CACHE[client_slug] = ctx
+    return ctx
+
+
+def _build_system_blocks(client_slug: str | None) -> list[dict]:
+    """system prompt 블록. client_context 있으면 추가 블록으로 inject + 캐시."""
+    blocks: list[dict] = [{"type": "text", "text": _SYSTEM}]
+    ctx = _get_client_context(client_slug)
+    if ctx:
+        blocks.append({
+            "type": "text",
+            "text": f"\n[클라이언트 디자인 가이드 — 반드시 이 룰 따라 생성하라]\n{ctx}",
+        })
+    blocks[-1]["cache_control"] = {"type": "ephemeral"}
+    return blocks
+
+
+def _get_ref_blocks(client_slug: str | None, max_images: int = 5) -> list[dict]:
+    """클라이언트 references 이미지 블록 로드 (메모리 캐시).
+
+    마지막 블록에 cache_control ephemeral 추가 → Anthropic prompt cache 적용.
+    Sonnet 4.6 최소 2048 토큰 / 이미지 1장 ≈ 1500토큰 → 2장+면 캐시 동작.
+    """
+    if not client_slug:
+        return []
+    cache_key = f"{client_slug}:{max_images}"
+    if cache_key in _REF_CACHE:
+        return _REF_CACHE[cache_key]
+    if not has_references(client_slug):
+        _REF_CACHE[cache_key] = []
+        return []
+    blocks = load_references_as_anthropic_blocks(client_slug, max_images=max_images)
+    if blocks:
+        # 마지막 이미지 블록에 cache_control → 모든 ref image가 캐시 prefix
+        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral"}}
+    _REF_CACHE[cache_key] = blocks
+    return blocks
+
 _SYSTEM = """너는 상위 1% 인스타그램 카드뉴스 디자이너 + 프론트엔드 개발자다.
 사용자 컨셉 → 1080×1080 카드뉴스 슬라이드 1장 HTML 풀 마크업으로 생성한다.
+
+[레퍼런스 이미지가 함께 제공된 경우]
+- 이미지들은 사용자가 좋아하는 카드뉴스 톤·임팩트·시각 언어의 견본이다
+- 색감·타이포·레이아웃 비율·여백·강조 방식·전반적 무드를 모방하라
+- ⚠️ **절대 금지**: 레퍼런스 이미지 안의 어떤 텍스트도 출력 HTML에 쓰지 마라.
+  - 레퍼런스에 보이는 브랜드명·계정명·로고 텍스트·해시태그·캡션·하단 워터마크·헤더·푸터 모두 무시
+  - 예: ref에 "에이나우 / ai_ainow / @create_doer / 짐코딩" 등이 보여도 출력에 절대 등장 금지
+  - 너는 시각 언어(색·폰트·레이아웃·여백)만 모방하는 디자이너다. 텍스트는 사용자가 준 데이터에서만 가져온다.
+- "비슷한 톤이지만 사용자 데이터로 새로 만든 슬라이드" 가 정답
+- 슬라이드 안에 표시할 브랜드명/계정명이 필요한 경우, 사용자가 brand_voice 또는 데이터로 명시한 것만 사용. 추측·창작·레퍼런스 차용 금지.
 
 [필수 규칙]
 1. <!DOCTYPE html>...</html> 풀 마크업 — head·body 다 포함
@@ -78,6 +141,7 @@ def generate_freestyle_slide_html(
     total: int,
     photo_url: str | None = None,
     feedback_prefix: str = "",
+    client_slug: str | None = None,
 ) -> dict:
     """1장 슬라이드 HTML 생성 (Sonnet 4.6).
 
@@ -117,13 +181,27 @@ def generate_freestyle_slide_html(
 위 정보를 바탕으로 1080×1080 카드뉴스 1장 HTML 통째로 생성하라.
 정형 템플릿 X. 컨셉에 맞춰 다이내믹하게 디자인하라.
 JSON {{html, rationale}}만 반환."""
-    user_msg = (feedback_prefix + "\n\n" + base_msg) if feedback_prefix else base_msg
+    user_text = (feedback_prefix + "\n\n" + base_msg) if feedback_prefix else base_msg
+
+    ref_blocks = _get_ref_blocks(client_slug)
+    if ref_blocks:
+        intro = (
+            "[레퍼런스 카드뉴스 — 톤·시각 언어 견본]\n"
+            f"아래 {len(ref_blocks)}장은 사용자가 좋아하는 카드뉴스 디자인이다. "
+            "색감·타이포·레이아웃·임팩트를 모방하되, 텍스트는 아래 슬라이드 데이터로 새로 만들라.\n"
+        )
+        content_blocks: list[dict] = [{"type": "text", "text": intro}]
+        content_blocks.extend(ref_blocks)
+        content_blocks.append({"type": "text", "text": user_text})
+        messages_payload = [{"role": "user", "content": content_blocks}]
+    else:
+        messages_payload = [{"role": "user", "content": user_text}]
 
     resp = _client.messages.create(
         model=_MODEL,
         max_tokens=4096,
-        system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_msg}],
+        system=_build_system_blocks(client_slug),
+        messages=messages_payload,
     )
     raw = resp.content[0].text.strip()
     return _extract_json(raw)
@@ -135,6 +213,7 @@ def generate_freestyle_carousel(
     photo_urls: list[str | None] | None = None,
     parallel: bool = True,
     feedback_prefix: str = "",
+    client_slug: str | None = None,
 ) -> list[dict]:
     """N장 슬라이드 freestyle 풀 생성. 병렬 호출.
 
@@ -155,6 +234,7 @@ def generate_freestyle_carousel(
                 slide_num=i + 1, total=total,
                 photo_url=photos[i],
                 feedback_prefix=feedback_prefix,
+                client_slug=client_slug,
             )
             for i, c in enumerate(slide_concepts)
         ]
@@ -169,6 +249,7 @@ def generate_freestyle_carousel(
                 i + 1, total,
                 photos[i],
                 feedback_prefix,
+                client_slug,
             ): i
             for i, c in enumerate(slide_concepts)
         }
@@ -192,6 +273,7 @@ def generate_slide_with_overflow_check(
     total: int,
     photo_url: str | None = None,
     max_retries: int = 2,
+    client_slug: str | None = None,
 ) -> tuple[dict, bytes, dict]:
     """슬라이드 1장 생성 → overflow 체크 → 잘리면 재생성.
 
@@ -212,6 +294,7 @@ def generate_slide_with_overflow_check(
             result = generate_freestyle_slide_html(
                 slide_concept, brand_voice, role, slide_num, total,
                 photo_url=photo_url, feedback_prefix=feedback,
+                client_slug=client_slug,
             )
             html = result.get("html", "")
             if not html.strip():
@@ -253,6 +336,7 @@ def generate_freestyle_carousel_safe(
     brand_voice: dict,
     photo_urls: list[str | None] | None = None,
     max_retries_per_slide: int = 2,
+    client_slug: str | None = None,
 ) -> dict:
     """N장 freestyle + 슬라이드별 overflow 검증·재시도. 병렬.
 
@@ -277,6 +361,7 @@ def generate_freestyle_carousel_safe(
                 generate_slide_with_overflow_check,
                 c, brand_voice, c.get("role", "insight"),
                 i + 1, total, photos[i], max_retries_per_slide,
+                client_slug,
             ): i
             for i, c in enumerate(slide_concepts)
         }
@@ -306,6 +391,7 @@ def generate_with_self_critique(
     photo_urls: list[str | None] | None = None,
     target_score: int = 90,
     max_critiques: int = 1,
+    client_slug: str | None = None,
 ):
     """1차 freestyle → vision 평가 → score < target이면 약점 피드백 + 재호출.
 
@@ -323,7 +409,7 @@ def generate_with_self_critique(
 
     history: list[dict] = []
 
-    htmls = generate_freestyle_carousel(slide_concepts, brand_voice, photo_urls)
+    htmls = generate_freestyle_carousel(slide_concepts, brand_voice, photo_urls, client_slug=client_slug)
     pngs = [render_html_to_png(h.get("html", "")) for h in htmls]
     vision = evaluate_carousel_design(pngs)
     history.append({k: vision.get(k) for k in ("score", "breakdown", "notes")})
@@ -356,6 +442,7 @@ def generate_with_self_critique(
         retry_htmls = generate_freestyle_carousel(
             slide_concepts, brand_voice, photo_urls,
             feedback_prefix=feedback,
+            client_slug=client_slug,
         )
         retry_pngs = [render_html_to_png(h.get("html", "")) for h in retry_htmls]
         retry_vision = evaluate_carousel_design(retry_pngs)
