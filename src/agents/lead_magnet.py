@@ -551,42 +551,89 @@ def _build_lm_freestyle_concepts(
     keyword: str,
     brand_photo_url: str | None,
 ) -> list[dict]:
-    """lead_magnet LM 데이터 → freestyle slide_concepts 6장 변환."""
+    """lead_magnet LM 데이터 → freestyle slide_concepts 6장 변환.
+
+    H — 도구 로고 자동 매칭: 본문에서 ChatGPT/Claude/Notion 등 추출 → 슬라이드별 logo URL 주입.
+    """
+    from src.utils.logo_resolver import resolve_logos_for_lm  # noqa: PLC0415
+
+    logos = resolve_logos_for_lm(
+        hook=hook,
+        tease_title=tease_title,
+        tease_contents=tease_contents,
+        preview1_heading=preview1_heading,
+        preview1_bullets=preview1_bullets,
+        preview2_heading=preview2_heading,
+        preview2_bullets=preview2_bullets,
+        blurred_items=blurred_items,
+    )
+
+    def _logo_brief(slide_idx: int) -> str:
+        sl = logos["by_slide"].get(slide_idx, [])
+        if not sl:
+            return ""
+        items = " / ".join(f"{n}={u}" for n, u in sl[:3])
+        return (
+            f"\n[도구 로고 — 이 슬라이드에 등장하는 도구의 공식 로고 PNG/SVG URL이다. "
+            f"슬라이드 우상단 또는 헤딩 옆에 <img src='URL' style='height:60-100px; width:auto; opacity:0.9'> 형태로 박아라. "
+            f"여러 개면 그리드/가로 정렬. 텍스트는 그대로 유지. 로고 활용 강제: {items}]"
+        )
+
     return [
         {
             "role": "hook",
             "headline": hook,
             "subtext": f"댓글에 '{keyword}' 남기면 드립니다",
             "data": "",
-            "vision_brief": "캐러셀 첫 장. 압도적 큰 타이포 한 메시지 강타. 미니멀. SWIPE→ 안내 하단. 배경 사진 있으면 어둡게 깔고 텍스트 위로.",
+            "vision_brief": (
+                "캐러셀 첫 장. 압도적 큰 타이포 한 메시지 강타. 미니멀. SWIPE→ 안내 하단. "
+                "배경 사진 있으면 어둡게 깔고 텍스트 위로."
+                + _logo_brief(0)
+            ),
         },
         {
             "role": "tease",
             "headline": tease_title,
             "subtext": "이 자료에 담긴 내용",
             "data": "\n".join(f"{i+1:02d}. {c}" for i, c in enumerate(tease_contents[:6])),
-            "vision_brief": "안에 무엇이 있는지 보여주는 목차 슬라이드. 6개 항목 번호 매긴 리스트 또는 그리드. 각 항목 시각 위계 일관. FOMO 유발.",
+            "vision_brief": (
+                "안에 무엇이 있는지 보여주는 목차 슬라이드. 6개 항목 번호 매긴 리스트 또는 그리드. "
+                "각 항목 시각 위계 일관. FOMO 유발."
+                + _logo_brief(1)
+            ),
         },
         {
             "role": "insight",
             "headline": preview1_heading,
             "subtext": preview1_bullets[0][:80] if preview1_bullets else "",
             "data": preview1_bullets[1][:80] if len(preview1_bullets) > 1 else "",
-            "vision_brief": "1슬라이드 1메시지. 큰 헤딩 + 핵심 한 줄 + 보조 한 줄. 4불릿 금지. 우측 또는 하단에 빈 공간 두지 말고 시각 강조 활용. 하단 '→ 전체 자료는 댓글로 신청' 작게.",
+            "vision_brief": (
+                "1슬라이드 1메시지. 큰 헤딩 + 핵심 한 줄 + 보조 한 줄. 4불릿 금지. "
+                "우측 또는 하단에 빈 공간 두지 말고 시각 강조 활용. 하단 '→ 전체 자료는 댓글로 신청' 작게."
+                + _logo_brief(2)
+            ),
         },
         {
             "role": "insight",
             "headline": preview2_heading,
             "subtext": preview2_bullets[0][:80] if preview2_bullets else "",
             "data": preview2_bullets[1][:80] if len(preview2_bullets) > 1 else "",
-            "vision_brief": "preview1과 다른 레이아웃 (시퀀스 단조 금지). 같은 1메시지 룰. 하단 '→ 전체 자료는 댓글로 신청' 작게.",
+            "vision_brief": (
+                "preview1과 다른 레이아웃 (시퀀스 단조 금지). 같은 1메시지 룰. "
+                "하단 '→ 전체 자료는 댓글로 신청' 작게."
+                + _logo_brief(3)
+            ),
         },
         {
             "role": "blur",
             "headline": "나머지 정보는…",
             "subtext": f"댓글에 '{keyword}' 남기면 잠금 해제!",
             "data": "\n".join(f"• {b[:50]}" for b in blurred_items[:4]),
-            "vision_brief": "잠금된 정보 4개 (CSS filter:blur(5px) 또는 텍스트 흐리게). 호기심 극대화. 하단에 강한 CTA 버튼 박스 (액센트 색).",
+            "vision_brief": (
+                "잠금된 정보 4개 (CSS filter:blur(5px) 또는 텍스트 흐리게). 호기심 극대화. "
+                "하단에 강한 CTA 버튼 박스 (액센트 색)."
+                + _logo_brief(4)
+            ),
         },
         {
             "role": "cta",
@@ -776,17 +823,43 @@ def _generate_lm_content(
 - 제공된 정보에 없는 숫자는 절대 만들어 내지 말 것
 - 실제 데이터 없이 통계처럼 보이는 수치 사용 시 신뢰 파괴됨
 
-⚠️ 절대 쓰면 안 되는 표현 (AI 티 나는 말투):
-- "~해야 합니다", "~하시기 바랍니다", "~것을 권장합니다"
-- "첫째, 둘째, 셋째" 나열
-- "중요한 점은", "결론적으로", "참고로 말씀드리면"
-- 설명서 같은 문어체나 딱딱한 존댓말
+⚠️ **AI 슬롭 차단 — 다음 어구 절대 금지 (인스타 1초 만에 AI 티 들통)**:
+보고서/책/회의록 톤 (인포그래픽 클래식 슬롭):
+- "~로 갈아탄", "~을 활용한", "~을 통한", "~을 기반으로", "~한 결과"
+- "현시점", "현재 시점", "이 시점에서"
+- "동급 또는 상위", "동급 이상", "전반적으로", "유의미한"
+- "벤치마크 수치로", "데이터 기반으로", "분석 결과", "통계적으로"
+- "모델 고르는 법", "선택하는 법", "고르는 방법" — 책 목차 톤
+- "예측 가능", "합리적", "효율적", "최적화"
+- "~하시기 바랍니다", "~을 권장합니다", "~해야 합니다"
+- "첫째, 둘째, 셋째" / "1. 2. 3." 격식 나열
+- "중요한 점은", "결론적으로", "참고로", "말씀드리면"
+- "혁신", "프리미엄", "최고", "업계 1위", "놀라운" (CLAUDE.md 금지어)
+- 영문/한자 약어 격식: "API", "AI Tools", "B2B" — 자연어로 풀어 쓰기
 
-✅ 이렇게 써 (실제 인플루언서 말투):
-- 직접 경험한 것처럼 ("이거 진짜 몰랐는데", "써봤는데 효과 장난 아니야")
-- 구체적인 상황 예시 (수치가 없으면 상황·방법으로 대체)
-- 팔로워가 "저장해야겠다" 싶게 만드는 실용 팁
+✅ **실제 사람 말투 — 이 톤으로만 써 (미러·짐코딩 패턴 학습)**:
+- 1인칭 직설: "써봤는데 진짜로", "갈아타봤음", "1주일 돌려봤음"
+- 짧은 문장 + 구어 종결: "~함", "~줌", "~았다", "~없음", "~된다"
+- 감탄·반전: "이거 진짜", "미친 거 아니냐고", "엑셀 버렸다", "장난 아님"
+- 고유명사 그대로: "ChatGPT", "Claude", "Cursor", "Notion AI" (영문 그대로 OK)
+- 수치는 직격: "76%만 한 번에 끝남", "토큰 38% 줄었다", "월 35달러"
+- 관용 부정 활용: "안 됐다", "ㅈ댐", "안 밀림", "버렸다"
 - 브랜드 톤: {tone}
+
+🎯 **미러·짐코딩식 hook 5개 학습 예시 (이 톤으로 hook 생성)**:
+- "나만 모르는 AI 툴" (짧고 직관, 호기심)
+- "ChatGPT 실전" (도구명 + 한 단어 임팩트)
+- "코딩 1도 모르는데 앱 만든다고?" (반전 의문)
+- "발표 자료 5분 완성" (시간 + 결과)
+- "AI로 월 100만 부업 성공!" (수치 + 감탄)
+
+🎯 **본문(preview_bullets)도 같은 톤 — Before/After 변환 예시**:
+- ❌ "Terminal-Bench 2.0에서 Gemini 3.0보다 2% 앞섬, 코딩·자동화 작업 기준 현시점 상위"
+- ✅ "Terminal-Bench 2.0 돌려봤더니 Gemini 3.0 이김. 코딩 작업은 이게 답이다"
+- ❌ "GPT-5.1-Codex-Max로 갈아탄 첫 주, 토큰 소비 38% 줄었다"
+- ✅ "Codex-Max 1주일 써봤음. 토큰 38% 줄어서 청구서 보고 놀람"
+- ❌ "한 모델에 충성하지 말고, 코딩·자동화는 Codex-Max / 카피라이팅은 다른 모델로 분리"
+- ✅ "한 모델 다 시키지 마라. 코딩=Codex / 카피=Sonnet 쪼개써. 응답 1.4배 빨라짐"
 
 [클라이언트] {client_name}
 [주제] {topic}
