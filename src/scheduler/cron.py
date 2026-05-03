@@ -226,10 +226,11 @@ def topic_selected_poll_job() -> None:
                 )
                 continue
 
-            # 새 row를 status=approved로 자동 승인 (1% 게이트: 사람 클릭 1번으로 끝)
-            # source_type 전파 (어느 신호 출처인지 추적)
+            # C — 자동 human_approved=True 제거. 토픽 채택은 콘텐츠 게시 승인이 아님.
+            # 새 row는 status=approved로 두되 human_approved는 사용자가 디자인 슬랙 카드(notify_design_ready)
+            # 보고 클릭해야 True. 이전엔 토픽 클릭 1번으로 게시까지 자율 진행되어 사용자 모르게 게시.
             for ni in saved_ideas:
-                patch = {"status": "approved", "human_approved": True}
+                patch = {"status": "approved"}
                 if source_type:
                     patch["source_type"] = source_type
                 _db.update("content_ideas", filters={"id": ni["id"]}, patch=patch)

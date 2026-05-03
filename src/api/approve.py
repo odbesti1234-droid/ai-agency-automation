@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -20,9 +21,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+# B — URL unfurl 봇 차단 패턴. Slack/Twitter/Facebook 등 미리보기 봇이 GET하면 confirm 페이지 X.
+_BOT_UA_RE = re.compile(
+    r"slackbot|slack-imgproxy|facebookexternalhit|twitterbot|whatsapp|telegrambot|linkedinbot|discordbot|googlebot|bingbot|preview|unfurl",
+    re.IGNORECASE,
+)
 
 from src.db.client import SupabaseClient
 
@@ -53,10 +60,12 @@ def health() -> dict:
 
 @app.get("/approve", response_class=HTMLResponse)
 async def approve(
+    request: Request,
     idea_id: str = Query(...),
     action: str = Query(...),
     token: str = Query(...),
     stage: str = Query(default="content"),
+    confirm: int = Query(default=0),
 ) -> HTMLResponse:
     if action not in _ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail="action must be approved or rejected")
@@ -66,6 +75,14 @@ async def approve(
 
     if not _verify_token(idea_id, action, token):
         raise HTTPException(status_code=403, detail="Invalid token")
+
+    # B — URL unfurl 봇 차단. Slack/Twitter/Facebook 등 미리보기 봇이 GET해도 처리 X.
+    ua = request.headers.get("user-agent", "")
+    is_bot = bool(_BOT_UA_RE.search(ua))
+
+    # B — 첫 GET이면 confirm 페이지만 응답 (DB 변경 0). 사용자가 confirm 버튼 클릭(confirm=1) 시에만 실제 처리.
+    if confirm != 1 or is_bot:
+        return HTMLResponse(content=_html_confirm_page(idea_id, action, token, stage))
 
     db = SupabaseClient()
     try:
@@ -88,24 +105,13 @@ async def approve(
                 )
             if action == "approved":
                 client_id = idea.get("client_id")
-                # 같은 클라이언트의 design_ready 전체를 일괄 final_approved 처리
-                if client_id:
-                    pending_designs = db.select(
-                        "content_ideas",
-                        filters={"client_id": client_id, "status": "design_ready"},
-                    )
-                    for pending in pending_designs:
-                        db.update("content_ideas", filters={"id": pending["id"]}, patch={
-                            "status": "final_approved",
-                            "human_approved": True,
-                        })
-                    all_approved_ideas = [idea] + [p for p in pending_designs if p["id"] != idea_id]
-                else:
-                    db.update("content_ideas", filters={"id": idea_id}, patch={
-                        "status": "final_approved",
-                        "human_approved": True,
-                    })
-                    all_approved_ideas = [idea]
+                # A — 일괄 승인 제거. 사용자가 클릭한 단건만 final_approved 처리.
+                # 이전엔 같은 client의 design_ready 전체가 일괄 게시되는 결함 (사용자 모르게 N건 게시).
+                db.update("content_ideas", filters={"id": idea_id}, patch={
+                    "status": "final_approved",
+                    "human_approved": True,
+                })
+                all_approved_ideas = [idea]
 
                 # 클라이언트 정보 조회 → Slack에 최종 카드뉴스 전체 전송
                 try:
@@ -179,6 +185,36 @@ async def approve(
         )
     finally:
         db.close()
+
+
+def _html_confirm_page(idea_id: str, action: str, token: str, stage: str) -> str:
+    """B — 첫 GET 응답용 확인 페이지. 실제 처리는 confirm=1 클릭 시.
+
+    Slack/이메일 unfurl 봇이 GET URL을 자동 fetch해도 이 페이지만 받고 끝남 (DB 변경 0).
+    사용자만 'confirm' 버튼 클릭 → confirm=1 GET → 실제 승인/거부 처리.
+    """
+    base = os.environ.get("APPROVAL_BASE_URL", "http://localhost:8000").rstrip("/")
+    confirm_url = f"{base}/approve?idea_id={idea_id}&action={action}&token={token}&stage={stage}&confirm=1"
+    label = "승인" if action == "approved" else "거부"
+    color = "#22c55e" if action == "approved" else "#ef4444"
+    icon = "✅" if action == "approved" else "❌"
+    stage_label = "디자인 최종" if stage == "design" else "콘텐츠"
+    return f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><title>{stage_label} {label} 확인</title>
+<style>body{{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc}}
+.card{{text-align:center;padding:2rem;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);background:white;max-width:420px}}
+h1{{font-size:1.4rem;color:#1e293b;margin:.5rem 0}}
+p{{color:#475569;margin:.5rem 0}}
+.btn{{display:inline-block;margin-top:1rem;padding:.8rem 2rem;background:{color};color:white;border:none;border-radius:8px;font-size:1rem;cursor:pointer;text-decoration:none;font-weight:600}}
+.cancel{{display:inline-block;margin-top:.5rem;padding:.5rem 1rem;color:#64748b;text-decoration:none;font-size:.9rem}}</style></head>
+<body><div class="card">
+<div style="font-size:3rem">{icon}</div>
+<h1>{stage_label} {label} 확인</h1>
+<p>이 콘텐츠를 정말 <b>{label}</b>하시겠습니까?</p>
+<p style="font-size:.85rem;color:#94a3b8">id: {idea_id[:8]}...</p>
+<a href="{confirm_url}" class="btn">{label}</a>
+<br/><a href="javascript:window.close()" class="cancel">취소</a>
+</div></body></html>"""
 
 
 def _html_page(title: str, message: str, success: bool) -> str:
