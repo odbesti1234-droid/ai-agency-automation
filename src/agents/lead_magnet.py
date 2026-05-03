@@ -528,7 +528,16 @@ def render_lm_slide(html: str) -> bytes:
         page = browser.new_page(viewport={"width": 1080, "height": 1080})
         # networkidle은 Google Fonts CDN 응답 대기 중 무한 블록 가능 → load로 변경
         page.set_content(html, wait_until="load", timeout=20000)
-        page.wait_for_timeout(1000)
+        # K — simpleicons.org CDN 로고 완료 대기. img.complete=False면 alt 텍스트 노출 결함.
+        # complete는 로드 성공/실패 모두 True → CDN 무응답 시 3s 후 timeout으로 빠져나가 alt 폴백
+        try:
+            page.wait_for_function(
+                "Array.from(document.images).every(img => img.complete)",
+                timeout=3000,
+            )
+        except Exception:
+            pass  # 타임아웃 시 그대로 진행 (alt 폴백은 어차피 결함이지만 무한 대기보다 낫다)
+        page.wait_for_timeout(2000)
         png = page.screenshot(clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
         browser.close()
     return png
@@ -921,6 +930,7 @@ def _generate_lm_content(
   "preview2_heading": "미리보기2 소제목 (20자 이내, 구어체)",
   "preview2_bullets": ["정확히 2개. [0]=핵심 한 줄(50자 이내, 수치/액션), [1]=보조 한 줄(60자 이내, 근거/방법). 4개 절대 금지."],
   "blurred_items": ["블러 처리할 정보 4개, 각 30자 이내, 독자가 너무 궁금해할 것들"],
+  "caption_body": "인스타 캡션 본문 2~3줄. **위 AI 슬롭 차단 룰·실제 사람 말투 룰 그대로 적용**. 1인칭 직설 + 구어 종결(~함/~줌/~았다/~없음). '여러분', '~해보세요', '~하시면', '~드려요', '~해드립니다' 절대 금지. hook을 풀어쓰는 게 아니라 hook 뒤에 자연스럽게 붙는 코멘트(예: '나도 처음엔 안 됐는데 이렇게 쓰니까 됨', '진짜 이거 1주일 돌려봤는데 미쳤다'). 마지막 줄에 '댓글 키워드 코멘트 → DM 자동발송' 톤으로 CTA. 80~200자.",
   "notion_title": "주제를 요약한 한국어 제목 (30자 이내, 날짜·@·특수기호 없음)",
   "notion_sections": [
     {{
@@ -1145,6 +1155,16 @@ def run(
 
     # ── 바이럴 사전 심사 (critic) ──────────────────────────────
     industry = brand_voice.get("industry", "")
+    # N — caption humanize: LLM이 caption_body 생성, 미생성 시 humanized 폴백
+    def _build_caption(_lm: dict, _hook: str, _kw: str) -> str:
+        body = (_lm.get("caption_body") or "").strip()
+        cta_line = f"댓글 '{_kw}' 박아두면 DM 감 👇"
+        parts = [_hook]
+        if body:
+            parts.append(body)
+        parts.append(cta_line)
+        return "\n\n".join(parts)
+    caption_for_critic = _build_caption(lm, hook, keyword)
     preview_slides = [
         {"role": "hook", "headline": hook},
         {"role": "tease", "headline": lm.get("tease_title", "")},
@@ -1154,12 +1174,12 @@ def run(
             (lm.get("preview1_heading", ""), lm.get("preview1_bullets", [])),
             (lm.get("preview2_heading", ""), lm.get("preview2_bullets", [])),
         ]
-    ] + [{"role": "cta", "headline": f"댓글에 '{keyword}' 남기면 전체 자료 드려요"}]
+    ] + [{"role": "cta", "headline": f"댓글 '{keyword}' 박아두면 DM 감"}]
 
     critic_result = critic_evaluate(
         hook=hook,
         slide_scripts=preview_slides,
-        caption=f"{hook}\n\n댓글에 '{keyword}' 남겨주시면 전체 자료 드려요",
+        caption=caption_for_critic,
         brand_voice=brand_voice,
         industry=industry,
     )
@@ -1182,10 +1202,11 @@ def run(
                 source_facts,
             )
             hook = lm.get("hook", topic)
+            caption_for_critic = _build_caption(lm, hook, keyword)
             critic_result = critic_evaluate(
                 hook=hook,
                 slide_scripts=preview_slides,
-                caption=f"{hook}\n\n댓글에 '{keyword}' 남겨주시면 전체 자료 드려요",
+                caption=caption_for_critic,
                 brand_voice=brand_voice,
                 industry=industry,
             )
@@ -1319,11 +1340,8 @@ def run(
     content_idea_id: str | None = None
     try:
         from src.api.approve import make_approve_url  # noqa: PLC0415
-        caption_text = (
-            f"{hook}\n\n"
-            f"댓글에 '{keyword}' 남겨주시면 전체 자료 드려요 👇\n\n"
-            + " ".join(lm.get("hashtags", []))
-        )
+        # N — caption humanize: caption_body 사용 + humanized CTA
+        caption_text = _build_caption(lm, hook, keyword) + "\n\n" + " ".join(lm.get("hashtags", []))
         _auto = client_row.get("auto_approve", False)
         ci_row = db_client.insert("content_ideas", {
             "client_id": client_id,
