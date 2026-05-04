@@ -577,7 +577,19 @@ def generate_slide_script(
 
     diff_text = "\n".join(f"  - {d}" for d in differentiators[:3]) if differentiators else "  (미설정)"
     palette_text = ", ".join(palette[:4]) if palette else "브랜드 기본 팔레트"
-    context_section = f"\n\n[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}" if client_context else ""
+
+    # client_context는 system prompt 두번째 블록으로 분리 (cache_control ephemeral) —
+    # user message에 매 호출 inject하던 패턴 폐기. 같은 클라이언트 batch 호출 시 cache hit.
+    # cache min 충족: _SYSTEM_SLIDE_SCRIPT ~5000 + client_context 1000~3000 ≥ Sonnet 4.6 2048.
+    system_blocks: list[dict] = [
+        {"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}},
+    ]
+    if client_context:
+        system_blocks.append({
+            "type": "text",
+            "text": f"[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}",
+            "cache_control": {"type": "ephemeral"},
+        })
 
     base_message = f"""아이디어 정보:
 - 콘텐츠 유형: {content_type}
@@ -589,7 +601,7 @@ def generate_slide_script(
 {diff_text}
 
 브랜드 톤: {tone}
-색상 팔레트: {palette_text}{context_section}
+색상 팔레트: {palette_text}
 
 위 정보를 기반으로 5-9개 슬라이드 카드뉴스 스크립트를 JSON으로 생성하라."""
 
@@ -604,7 +616,7 @@ def generate_slide_script(
             response = _client.messages.create(
                 model=_MODEL,
                 max_tokens=3500,  # ghost_text/source 등 새 필드 + 6-9슬라이드 안전 buffer
-                system=[{"type": "text", "text": _SYSTEM_SLIDE_SCRIPT, "cache_control": {"type": "ephemeral"}}],
+                system=system_blocks,
                 messages=[{"role": "user", "content": user_message}],
             )
             raw = response.content[0].text.strip()
@@ -739,11 +751,22 @@ def generate(
     ]
     bv_slim = {k: brand_voice[k] for k in _bv_essential_keys if k in brand_voice}
 
-    context_section = f"\n\n[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}" if client_context else ""
+    # client_context를 system prompt 두번째 블록으로 분리 (cache_control ephemeral) —
+    # user message inject 폐기. 같은 클라이언트 batch 호출 시 cache hit으로 token 절감.
+    # _SYSTEM_STATIC 1500 + client_context 1000~3000 ≥ Sonnet 4.6 cache min 2048 충족.
+    system_blocks: list[dict] = [
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}},
+    ]
+    if client_context:
+        system_blocks.append({
+            "type": "text",
+            "text": f"[클라이언트 정적 가이드 (context/ 자동 로드 — 시퀀스·시각 컴포넌트·디자인 룰 반드시 준수)]\n{client_context}",
+            "cache_control": {"type": "ephemeral"},
+        })
 
     user_message = f"""클라이언트: {client['name']} ({client['industry']})
 브랜드 보이스 (핵심):
-{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{feedback_hint}{performance_hint}{context_section}
+{json.dumps(bv_slim, ensure_ascii=False, indent=2)}{strategy_hint}{feedback_hint}{performance_hint}
 
 {topic_line}
 생성 개수: {actual_count}개{"  (A/B 변주 모드: 정보형 A + 감성형 B)" if ab_variant else ""}"""
@@ -753,13 +776,7 @@ def generate(
         response = _client.messages.create(
             model=_MODEL,
             max_tokens=12000,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
+            system=system_blocks,
             messages=[{"role": "user", "content": user_message}],
         )
 
