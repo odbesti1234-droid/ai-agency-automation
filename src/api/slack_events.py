@@ -41,6 +41,10 @@ _BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 _INTAKE_CHANNEL = os.environ.get("SLACK_INTAKE_CHANNEL_ID", "")
 _REELS_ROOT = os.environ.get("REELS_ROOT", r"C:\Users\Administrator\Documents\reels")
 _TIMESTAMP_TOLERANCE_S = 60 * 5  # Slack 권장 5분
+_SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+_PHOTO_BUCKET = "property-photos"
+_IMAGE_MIME = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic"}
 
 
 def _verify_slack_signature(timestamp: str, raw_body: bytes, signature: str) -> bool:
@@ -125,6 +129,69 @@ def _claude_extract_info(message_text: str) -> dict:
     return json.loads(raw)
 
 
+def _download_slack_file(url_private: str) -> tuple[bytes, str]:
+    """Slack private file URL → bytes + content-type (Bot Token 인증)."""
+    if not _BOT_TOKEN:
+        raise RuntimeError("SLACK_BOT_TOKEN 미설정 — Slack file 다운로드 불가")
+    r = httpx.get(
+        url_private,
+        headers={"Authorization": f"Bearer {_BOT_TOKEN}"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.content, r.headers.get("content-type", "")
+
+
+def _upload_to_storage(bucket: str, object_path: str, data: bytes, content_type: str) -> str:
+    """Supabase Storage 업로드 → public URL."""
+    if not _SUPABASE_URL or not _SERVICE_KEY:
+        raise RuntimeError("SUPABASE 환경변수 미설정")
+    upload_url = f"{_SUPABASE_URL}/storage/v1/object/{bucket}/{object_path}"
+    public_url = f"{_SUPABASE_URL}/storage/v1/object/public/{bucket}/{object_path}"
+    resp = httpx.post(
+        upload_url,
+        content=data,
+        headers={
+            "Authorization": f"Bearer {_SERVICE_KEY}",
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        },
+        timeout=60,
+    )
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"Storage 업로드 실패 {resp.status_code}: {resp.text[:200]}")
+    return public_url
+
+
+def _process_slack_files(
+    files: list[dict],
+    folder_name: str,
+    property_dir: Path,
+) -> list[str]:
+    """슬랙 첨부 이미지 → Storage + 매물 폴더 둘 다 저장 → public URL 리스트 반환."""
+    public_urls = []
+    photos_dir = property_dir / "photos"
+    photos_dir.mkdir(exist_ok=True)
+    for i, f in enumerate(files, 1):
+        mimetype = f.get("mimetype", "")
+        if mimetype not in _IMAGE_MIME:
+            continue  # 이미지 외 파일 무시
+        url_private = f.get("url_private_download") or f.get("url_private", "")
+        if not url_private:
+            continue
+        try:
+            data, ct = _download_slack_file(url_private)
+            ext = _IMAGE_MIME[mimetype]
+            object_path = f"{folder_name}/photo_{i:02d}.{ext}"
+            public_url = _upload_to_storage(_PHOTO_BUCKET, object_path, data, mimetype)
+            public_urls.append(public_url)
+            # 로컬 매물 폴더에도 저장 (사용자 그록 작업용)
+            (photos_dir / f"photo_{i:02d}.{ext}").write_bytes(data)
+        except Exception as e:
+            print(f"[slack_events] 사진 {i} 처리 실패: {e}")
+    return public_urls
+
+
 def _post_slack_reply(channel: str, thread_ts: str | None, text: str) -> None:
     """Slack 채널/스레드에 응답 메시지 게시 (chat.postMessage)."""
     if not _BOT_TOKEN:
@@ -172,8 +239,10 @@ async def slack_events(request: Request) -> dict:
         return {"ok": True}  # 다른 채널 메시지 무시
 
     text = event.get("text", "").strip()
-    if not text or len(text) < 10:
-        return {"ok": True}  # 너무 짧은 메시지 무시
+    files = event.get("files", []) or []
+    # 텍스트 너무 짧고 이미지도 없으면 무시
+    if (not text or len(text) < 10) and not files:
+        return {"ok": True}
 
     thread_ts = event.get("ts")
 
@@ -214,13 +283,23 @@ async def slack_events(request: Request) -> dict:
         encoding="utf-8",
     )
 
-    print(f"[slack_events] ✅ {folder_name} 생성 — {title}")
+    # 첨부 이미지 처리
+    photo_urls: list[str] = []
+    if files:
+        photo_urls = _process_slack_files(files, folder_name, property_dir)
+        if photo_urls:
+            info["photos"] = photo_urls
+            info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print(f"[slack_events] ✅ {folder_name} 생성 — {title} (사진 {len(photo_urls)}장)")
+    photo_line = f"\n• 사진 {len(photo_urls)}장 자동 수집 완료" if photo_urls else ""
     _post_slack_reply(
         channel,
         thread_ts,
         f":white_check_mark: *{folder_name}* 등록 완료\n"
-        f"• Hook: {info.get('captions', [{}])[0].get('text', '')}\n"
-        f"• 영상은 Google Drive `플랜비_매물자료/{folder_name}/`에 던져주세요",
+        f"• Hook: {info.get('captions', [{}])[0].get('text', '')}{photo_line}\n"
+        f"• 그록에서 영상 클립 10개 만들어서 매물 폴더에 던지신 후 "
+        f"`python scripts/full_chain.py --property {folder_name}` 실행하시면 끝까지 자동",
     )
 
-    return {"ok": True, "folder": folder_name}
+    return {"ok": True, "folder": folder_name, "photos": len(photo_urls)}
