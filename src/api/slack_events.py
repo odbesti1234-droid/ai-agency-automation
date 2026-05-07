@@ -211,54 +211,33 @@ def _post_slack_reply(channel: str, thread_ts: str | None, text: str) -> None:
         print(f"[slack_events] 응답 전송 실패: {e}")
 
 
-@app.post("/slack/events")
-async def slack_events(request: Request) -> dict:
-    """Slack Events API webhook."""
-    raw = await request.body()
-    timestamp = request.headers.get("x-slack-request-timestamp", "")
-    signature = request.headers.get("x-slack-signature", "")
+def process_intake_message(channel: str, message: dict) -> dict:
+    """매물 인테이크 메시지 처리 — webhook과 polling 양쪽에서 호출.
 
-    # 디버그 — webhook 진입 자체 추적 (2026-05-08 진단)
-    print(f"[slack_events] WEBHOOK RECEIVED ts={timestamp} body_len={len(raw)} sig_present={bool(signature)}", flush=True)
+    Args:
+        channel: Slack channel ID
+        message: Slack message event/object (text, files, ts, user, ...)
+    Returns:
+        {ok: bool, folder?: str, photos?: int, skipped?: str}
+    """
+    # 봇·시스템 메시지 skip
+    if message.get("bot_id") or message.get("subtype"):
+        return {"ok": True, "skipped": "bot_or_subtype"}
 
-    if not _verify_slack_signature(timestamp, raw, signature):
-        print(f"[slack_events] SIGNATURE FAIL ts={timestamp} sig={signature[:20]}...", flush=True)
-        raise HTTPException(status_code=401, detail="invalid signature")
-    print(f"[slack_events] signature OK", flush=True)
-
-    payload = json.loads(raw.decode("utf-8"))
-
-    # URL verification (앱 등록 시점)
-    if payload.get("type") == "url_verification":
-        return {"challenge": payload.get("challenge", "")}
-
-    event = payload.get("event", {})
-    event_type = event.get("type")
-
-    # message.channels 이벤트만 처리 (봇 메시지·수정·삭제는 무시)
-    if event_type != "message" or event.get("subtype") or event.get("bot_id"):
-        return {"ok": True}
-
-    channel = event.get("channel", "")
-    if _INTAKE_CHANNEL and channel != _INTAKE_CHANNEL:
-        return {"ok": True}  # 다른 채널 메시지 무시
-
-    text = event.get("text", "").strip()
-    files = event.get("files", []) or []
-    # 텍스트 너무 짧고 이미지도 없으면 무시
+    text = (message.get("text") or "").strip()
+    files = message.get("files") or []
     if (not text or len(text) < 10) and not files:
-        return {"ok": True}
+        return {"ok": True, "skipped": "too_short"}
 
-    thread_ts = event.get("ts")
+    thread_ts = message.get("ts")
 
     try:
         info = _claude_extract_info(text)
     except Exception as e:
-        print(f"[slack_events] info 추출 실패: {e}")
+        print(f"[slack_intake] info 추출 실패: {e}", flush=True)
         _post_slack_reply(channel, thread_ts, f":x: 매물 정보 변환 실패 — {e}")
-        return {"ok": True}
+        return {"ok": True, "skipped": "extract_fail"}
 
-    # 매물 폴더 생성
     reels_root = Path(_REELS_ROOT)
     reels_root.mkdir(parents=True, exist_ok=True)
     next_idx = _next_property_index(reels_root)
@@ -270,14 +249,13 @@ async def slack_events(request: Request) -> dict:
     info_path = property_dir / "info.json"
     info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 메타 — 어느 슬랙 메시지에서 왔는지
     meta_path = property_dir / "_intake_meta.json"
     meta_path.write_text(
         json.dumps(
             {
-                "source": "slack_events",
+                "source": "slack_intake",
                 "channel": channel,
-                "user": event.get("user", ""),
+                "user": message.get("user", ""),
                 "ts": thread_ts,
                 "received_at": datetime.now(timezone.utc).isoformat(),
                 "raw_text": text,
@@ -288,7 +266,6 @@ async def slack_events(request: Request) -> dict:
         encoding="utf-8",
     )
 
-    # 첨부 이미지 처리
     photo_urls: list[str] = []
     if files:
         photo_urls = _process_slack_files(files, folder_name, property_dir)
@@ -296,7 +273,7 @@ async def slack_events(request: Request) -> dict:
             info["photos"] = photo_urls
             info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"[slack_events] ✅ {folder_name} 생성 — {title} (사진 {len(photo_urls)}장)")
+    print(f"[slack_intake] ✅ {folder_name} — {title} (사진 {len(photo_urls)}장)", flush=True)
     photo_line = f"\n• 사진 {len(photo_urls)}장 자동 수집 완료" if photo_urls else ""
     _post_slack_reply(
         channel,
@@ -306,5 +283,32 @@ async def slack_events(request: Request) -> dict:
         f"• 그록에서 영상 클립 10개 만들어서 매물 폴더에 던지신 후 "
         f"`python scripts/full_chain.py --property {folder_name}` 실행하시면 끝까지 자동",
     )
-
     return {"ok": True, "folder": folder_name, "photos": len(photo_urls)}
+
+
+@app.post("/slack/events")
+async def slack_events(request: Request) -> dict:
+    """Slack Events API webhook (polling과 양립 — webhook 작동 시 우선 처리)."""
+    raw = await request.body()
+    timestamp = request.headers.get("x-slack-request-timestamp", "")
+    signature = request.headers.get("x-slack-signature", "")
+
+    print(f"[slack_events] WEBHOOK RECEIVED ts={timestamp} body_len={len(raw)} sig_present={bool(signature)}", flush=True)
+
+    if not _verify_slack_signature(timestamp, raw, signature):
+        raise HTTPException(status_code=401, detail="invalid signature")
+
+    payload = json.loads(raw.decode("utf-8"))
+
+    if payload.get("type") == "url_verification":
+        return {"challenge": payload.get("challenge", "")}
+
+    event = payload.get("event", {})
+    if event.get("type") != "message":
+        return {"ok": True}
+
+    channel = event.get("channel", "")
+    if _INTAKE_CHANNEL and channel != _INTAKE_CHANNEL:
+        return {"ok": True}
+
+    return process_intake_message(channel, event)
