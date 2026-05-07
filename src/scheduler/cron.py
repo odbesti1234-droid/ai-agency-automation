@@ -34,6 +34,7 @@ from src.agents.onboarder import run_pending as onboarder_run_pending
 from src.agents.publisher import run_all_active as publisher_run_all_active
 from src.agents.analytics_collector import collect_due as analytics_collect_due
 from src.api.approve import app as api_app
+from src.api import slack_events  # noqa: F401 — import 시점에 /slack/events 라우트 등록
 from src.utils.ig_token import refresh_all_active as ig_token_refresh_all
 
 KST_OFFSET = 9  # UTC+9

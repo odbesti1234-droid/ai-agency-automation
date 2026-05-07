@@ -540,6 +540,69 @@ def notify_error(
     return send(text, webhook_url=webhook_url)
 
 
+def notify_reel_ready(
+    client_name: str,
+    idea: dict,
+    video_url: str,
+    webhook_url: str | None = None,
+) -> bool:
+    """릴스 업로드 완료 — 영상 미리보기 + caption + 승인/거부 버튼.
+
+    버튼 클릭 → approve.py /approve 라우트 → status=final_approved → publisher cron 잡음.
+    영상 미리보기는 슬랙이 video_url에서 자동 unfurl (mp4 public URL).
+    """
+    idea_id = idea.get("id", "")
+    hook = (idea.get("hook") or "")[:60]
+    caption_preview = (idea.get("caption") or "")[:300]
+    hashtags = idea.get("hashtags", [])
+    hashtag_preview = " ".join(hashtags[:5]) + (f" +{len(hashtags) - 5}" if len(hashtags) > 5 else "")
+
+    approve_url = make_approve_url(idea_id, "approve", stage="final")
+    reject_url = make_approve_url(idea_id, "reject", stage="final")
+
+    text = f":clapper: *[{client_name}] 릴스 검수 대기* — {hook}"
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"[{client_name}] 릴스 검수"},
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Hook:* {hook}\n*Hashtag:* {hashtag_preview}",
+            },
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Caption (앞 300자):*\n```{caption_preview}```"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*영상:* <{video_url}|미리보기 / 다운로드>"},
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "승인 → 게시"},
+                    "url": approve_url,
+                    "style": "primary",
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "거부"},
+                    "url": reject_url,
+                    "style": "danger",
+                },
+            ],
+        },
+    ]
+    return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
 def notify_token_expired(
     client_name: str,
     error: str,
