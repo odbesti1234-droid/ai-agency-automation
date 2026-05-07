@@ -218,8 +218,13 @@ async def slack_events(request: Request) -> dict:
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
 
+    # 디버그 — webhook 진입 자체 추적 (2026-05-08 진단)
+    print(f"[slack_events] WEBHOOK RECEIVED ts={timestamp} body_len={len(raw)} sig_present={bool(signature)}", flush=True)
+
     if not _verify_slack_signature(timestamp, raw, signature):
+        print(f"[slack_events] SIGNATURE FAIL ts={timestamp} sig={signature[:20]}...", flush=True)
         raise HTTPException(status_code=401, detail="invalid signature")
+    print(f"[slack_events] signature OK", flush=True)
 
     payload = json.loads(raw.decode("utf-8"))
 
