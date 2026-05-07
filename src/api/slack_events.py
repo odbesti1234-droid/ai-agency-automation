@@ -220,9 +220,17 @@ def process_intake_message(channel: str, message: dict) -> dict:
     Returns:
         {ok: bool, folder?: str, photos?: int, skipped?: str}
     """
-    # 봇·시스템 메시지 skip
-    if message.get("bot_id") or message.get("subtype"):
+    # 봇 메시지·진짜 시스템 메시지만 skip. file_share·thread_broadcast 등은 정상 처리.
+    SKIP_SUBTYPES = {
+        "channel_join", "channel_leave", "channel_topic", "channel_purpose",
+        "channel_archive", "channel_unarchive", "channel_name", "pinned_item",
+        "unpinned_item", "message_changed", "message_deleted", "bot_message",
+    }
+    sub = message.get("subtype") or ""
+    if message.get("bot_id") or sub in SKIP_SUBTYPES:
+        print(f"[slack_intake] skip bot/subtype={sub!r}", flush=True)
         return {"ok": True, "skipped": "bot_or_subtype"}
+    print(f"[slack_intake] processing ts={message.get('ts')} sub={sub!r} text_len={len(message.get('text') or '')} files={len(message.get('files') or [])}", flush=True)
 
     text = (message.get("text") or "").strip()
     files = message.get("files") or []
