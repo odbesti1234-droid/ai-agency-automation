@@ -34,7 +34,20 @@ from src.db.client import SupabaseClient
 _GRAPH_API_VERSION = "v21.0"
 _GRAPH_BASE = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
 
-_INSIGHT_METRICS = "impressions,reach,saved,shares,likes,comments"
+# 카드뉴스/이미지/캐러셀용 메트릭 — IG Graph API v21.0
+_CARD_METRICS = "impressions,reach,saved,shares,likes,comments"
+
+# 릴스용 메트릭 — IG Graph API v21.0 Reels Insights 명세
+# - views: 재생 수 (구 plays)
+# - total_interactions: likes+comments+shares+saves 합산
+# - ig_reels_avg_watch_time: 평균 시청 시간(ms)
+# - ig_reels_video_view_total_time: 총 시청 시간(ms, bigint)
+# - reach/likes/comments/shares/saved 공통
+_REEL_METRICS = (
+    "reach,likes,comments,shares,saved,"
+    "views,total_interactions,"
+    "ig_reels_avg_watch_time,ig_reels_video_view_total_time"
+)
 
 # 영구 에러 — retry해도 같은 결과. analytics_collected=true로 마킹해서 다음 cron이 다시 잡지 않게.
 # 이걸 안 하면 publisher와 같은 IG 앱 토큰 budget을 매 2시간마다 잠식해서 publish rate limit이 회복 못 함.
@@ -55,12 +68,17 @@ def _is_permanent_error(msg: str) -> bool:
     return any(p.lower() in low for p in _PERMANENT_ERROR_PATTERNS)
 
 
-def _fetch_ig_insights(ig_post_id: str, access_token: str) -> dict[str, Any]:
-    """IG Graph API /media/{id}/insights 호출 → 지표 딕셔너리 반환."""
+def _fetch_ig_insights(ig_post_id: str, access_token: str, is_reel: bool = False) -> dict[str, Any]:
+    """IG Graph API /media/{id}/insights 호출 → 지표 딕셔너리 반환.
+
+    Args:
+        is_reel: True면 릴스 메트릭, False면 카드뉴스/이미지 메트릭
+    """
+    metrics_str = _REEL_METRICS if is_reel else _CARD_METRICS
     resp = httpx.get(
         f"{_GRAPH_BASE}/{ig_post_id}/insights",
         params={
-            "metric": _INSIGHT_METRICS,
+            "metric": metrics_str,
             "access_token": access_token,
         },
         timeout=20,
@@ -88,7 +106,7 @@ def collect_due() -> list[dict]:
         resp = db._http.get(
             f"{db._base}/content_ideas",
             params={
-                "select": "id,client_id,ig_post_id,hook,published_at",
+                "select": "id,client_id,ig_post_id,hook,published_at,content_type,video_url",
                 "status": "eq.published",  # cancelled/failed의 ig_post_id 조회 차단 — 영구 #10 에러로 IG API budget 잠식
                 "analytics_due_at": f"lte.{now_iso}",
                 "analytics_collected": "eq.false",
@@ -133,12 +151,22 @@ def collect_due() -> list[dict]:
 
             access_token = _token_cache[client_id]
 
-            try:
-                metrics = _fetch_ig_insights(ig_post_id, access_token)
-                print(f"  [OK] {idea_id[:8]} | {hook_preview} | reach={metrics.get('reach', 0)} saved={metrics.get('saved', 0)}")
+            is_reel = (row.get("content_type") == "reel") or bool(row.get("video_url"))
 
-                # post_analytics INSERT
-                db.insert("post_analytics", {
+            try:
+                metrics = _fetch_ig_insights(ig_post_id, access_token, is_reel=is_reel)
+                kind = "REEL" if is_reel else "CARD"
+                if is_reel:
+                    print(
+                        f"  [OK-{kind}] {idea_id[:8]} | {hook_preview} | "
+                        f"views={metrics.get('views', 0)} reach={metrics.get('reach', 0)} "
+                        f"avg_watch={metrics.get('ig_reels_avg_watch_time', 0)}ms"
+                    )
+                else:
+                    print(f"  [OK-{kind}] {idea_id[:8]} | {hook_preview} | reach={metrics.get('reach', 0)} saved={metrics.get('saved', 0)}")
+
+                # post_analytics INSERT — 릴스/카드 공통 컬럼 + 릴스 전용 컬럼 (Null OK for non-Reels)
+                row_data = {
                     "id": str(uuid.uuid4()),
                     "client_id": client_id,
                     "content_idea_id": idea_id,
@@ -149,9 +177,15 @@ def collect_due() -> list[dict]:
                     "shares": metrics.get("shares", 0),
                     "saves": metrics.get("saved", 0),
                     "reach": metrics.get("reach", 0),
-                    "impressions": metrics.get("impressions", 0),
+                    "impressions": metrics.get("impressions", 0) if not is_reel else None,
                     "raw_insights": metrics,
-                })
+                }
+                if is_reel:
+                    row_data["views"] = metrics.get("views", 0)
+                    row_data["total_interactions"] = metrics.get("total_interactions", 0)
+                    row_data["avg_watch_time_ms"] = metrics.get("ig_reels_avg_watch_time", 0)
+                    row_data["video_view_total_time_ms"] = metrics.get("ig_reels_video_view_total_time", 0)
+                db.insert("post_analytics", row_data)
 
                 # content_ideas.analytics_collected = True
                 db.update(
