@@ -234,6 +234,89 @@ def _ig_create_story_container(
     return creation_id
 
 
+# Reels: 영상 처리에 시간 걸림 → publish 전 status_code='FINISHED' 폴링 필수.
+_REELS_POLL_INTERVAL_S = 5
+_REELS_POLL_MAX_S = 180  # 3분 — 짧은 릴스 50초면 충분
+
+
+def _ig_create_reels_container(
+    ig_account_id: str,
+    access_token: str,
+    video_url: str,
+    caption: str,
+    cover_url: str | None = None,
+    share_to_feed: bool = True,
+) -> str:
+    """Reels 컨테이너 생성 → creation_id 반환.
+
+    Args:
+        video_url: Supabase Storage 또는 외부 호스팅 mp4 URL (1080×1920 권장)
+        caption: 본문 + 해시태그 (2200자 한도)
+        cover_url: 커버 이미지 URL (없으면 IG 자동 생성)
+        share_to_feed: True면 피드에도 표시 (Reels 탭에 추가로)
+    """
+    params: dict[str, str] = {
+        "media_type": "REELS",
+        "video_url": video_url,
+        "caption": caption,
+        "share_to_feed": "true" if share_to_feed else "false",
+        "access_token": access_token,
+    }
+    if cover_url:
+        params["cover_url"] = cover_url
+
+    resp = httpx.post(
+        f"{_GRAPH_BASE}/{ig_account_id}/media",
+        params=params,
+        timeout=60,
+    )
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(f"IG reels container 오류: {data['error'].get('message', data['error'])}")
+    creation_id = data.get("id")
+    if not creation_id:
+        raise RuntimeError(f"reels creation_id 없음: {data}")
+    return creation_id
+
+
+def _ig_wait_reels_ready(
+    creation_id: str,
+    access_token: str,
+    poll_interval_s: int = _REELS_POLL_INTERVAL_S,
+    max_wait_s: int = _REELS_POLL_MAX_S,
+) -> None:
+    """Reels container status_code='FINISHED' 될 때까지 폴링.
+
+    IG Graph API: 영상 트랜스코딩에 30~120초 걸림. publish 호출 전 필수 대기.
+    EXPIRED/ERROR 시 즉시 raise. timeout 시 raise (caller가 backoff 처리).
+    """
+    elapsed = 0
+    while elapsed < max_wait_s:
+        try:
+            r = httpx.get(
+                f"{_GRAPH_BASE}/{creation_id}",
+                params={"fields": "status_code,status", "access_token": access_token},
+                timeout=15,
+            )
+            data = r.json()
+            if "error" in data:
+                err_msg = data["error"].get("message", str(data["error"]))
+                # poll 자체가 token expired에 걸릴 수 있음 — 그대로 raise
+                raise RuntimeError(f"IG reels status poll 오류: {err_msg}")
+            status_code = data.get("status_code", "")
+            if status_code == "FINISHED":
+                return
+            if status_code in ("ERROR", "EXPIRED"):
+                detail = data.get("status", "")
+                raise RuntimeError(f"IG reels processing 실패: status_code={status_code}, status={detail}")
+            # IN_PROGRESS / PUBLISHED 외 상태는 계속 대기
+        except httpx.HTTPError as e:
+            print(f"[publisher] reels poll 일시 오류 (계속 대기): {e}")
+        time.sleep(poll_interval_s)
+        elapsed += poll_interval_s
+    raise RuntimeError(f"IG reels processing timeout after {max_wait_s}s — caller가 retry 처리")
+
+
 def _ig_publish(
     ig_account_id: str,
     access_token: str,
@@ -499,11 +582,23 @@ def run(client_slug: str) -> dict:
                 except Exception as exc:
                     print(f"  → pending_creation_id_at 파싱 실패: {exc} — 재생성")
 
+            video_url = idea.get("video_url")
+            cover_url = idea.get("cover_url")
+            is_reel = bool(video_url)
             try:
                 if creation_id is None:
                     caption = _build_caption(idea)
 
-                    if len(carousel_urls) > 1:
+                    if is_reel:
+                        print(f"  → Step 1: Reels 컨테이너 생성 (video_url={video_url[:60]}...)")
+                        creation_id = _ig_create_reels_container(
+                            ig_account_id, ig_access_token,
+                            video_url=video_url,
+                            caption=caption,
+                            cover_url=cover_url,
+                        )
+                        print(f"  → Step 1 완료 (reels creation_id={creation_id})")
+                    elif len(carousel_urls) > 1:
                         print(f"  → Step 1: 캐러셀 ({len(carousel_urls)}장) 컨테이너 생성 중...")
                         child_ids = []
                         for i, slide_url in enumerate(carousel_urls, 1):
@@ -540,7 +635,17 @@ def run(client_slug: str) -> dict:
                         },
                     )
                     container_reusable = True
-                    time.sleep(5)
+                    if is_reel:
+                        # Reels는 트랜스코딩 시간 필요 — status FINISHED 폴링
+                        print(f"  → Step 1.5: Reels 처리 대기 (최대 {_REELS_POLL_MAX_S}s)...")
+                        _ig_wait_reels_ready(creation_id, ig_access_token)
+                        print(f"  → Step 1.5 완료 (FINISHED)")
+                    else:
+                        time.sleep(5)
+                elif is_reel:
+                    # 재사용된 reels container도 publish 직전 짧게 한 번 더 확인
+                    print(f"  → 재사용 reels container 상태 확인...")
+                    _ig_wait_reels_ready(creation_id, ig_access_token, max_wait_s=30)
 
                 print(f"  → Step 2: 게시 실행...")
                 ig_post_id = _ig_publish(ig_account_id, ig_access_token, creation_id)
@@ -589,9 +694,28 @@ def run(client_slug: str) -> dict:
                     continue
 
                 errors.append({"idea_id": idea_id, "error": err})
-                # rate limit이면 status를 final_approved로 되돌려 다음 cron이 재시도하도록.
-                # 그 외 에러는 기존대로 failed로 마킹 (운영자 수동 확인).
-                if _is_rate_limit_error(err):
+                # 분기:
+                #   - token_expired: 사람 갱신 필요 → status=token_expired + 슬랙 즉시 알림
+                #   - rate_limit: 자연 해소 → status=final_approved + backoff
+                #   - 그 외: status=failed (운영자 수동 확인)
+                if _is_token_expired_error(err):
+                    db_client.update(
+                        "content_ideas",
+                        filters={"id": idea_id},
+                        patch={
+                            "status": "token_expired",
+                            "last_error": err[:500],
+                            # container는 토큰 갱신 후 재사용 가능 — 무효화 안 함
+                        },
+                    )
+                    print(f"[publisher:{client_slug}] 🚨 {idea_id[:8]} → token_expired (즉시 슬랙 알림)")
+                    notify_token_expired(
+                        client_name=client_name,
+                        error=err,
+                        webhook_url=slack_webhook,
+                    )
+                    results.append({"idea_id": idea_id, "ig_post_id": None, "success": False, "skipped": "token_expired"})
+                elif _is_rate_limit_error(err):
                     from datetime import timedelta
                     prev_retry = int(idea.get("retry_count") or 0)
                     new_retry = prev_retry + 1

@@ -538,3 +538,44 @@ def notify_error(
     """에이전트 오류 알림."""
     text = f":x: *[{client_name}] {agent_name} 오류*\n```{error[:500]}```"
     return send(text, webhook_url=webhook_url)
+
+
+def notify_token_expired(
+    client_name: str,
+    error: str,
+    refresh_url: str | None = None,
+    webhook_url: str | None = None,
+) -> bool:
+    """IG access token 만료 즉시 알림. 갱신 URL 포함.
+
+    feedback_external_token_expiry 메모리 근거: 401 → 게시 모두 silent 실패 차단.
+    refresh_url 없으면 Meta 표준 토큰 디버거 링크.
+    """
+    url = refresh_url or "https://developers.facebook.com/tools/debug/accesstoken/"
+    text = (
+        f":rotating_light: *[{client_name}] IG TOKEN MANRYO — 게시 중단*\n"
+        f"```{error[:400]}```\n"
+        f"GAEN-SIN: {url}"
+    )
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"[{client_name}] IG 토큰 만료"},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*에러:*\n```{error[:400]}```"},
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "토큰 갱신"},
+                    "url": url,
+                    "style": "primary",
+                },
+            ],
+        },
+    ]
+    return send(text, blocks=blocks, webhook_url=webhook_url)
