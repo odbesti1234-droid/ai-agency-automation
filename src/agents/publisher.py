@@ -349,6 +349,7 @@ def run(client_slug: str) -> dict:
             if r.get("human_approved") is True
             and r.get("design_url")
             and (not r.get("next_retry_at") or r["next_retry_at"] <= now_iso)
+            and r.get("content_type") != "feed"  # 2026-05-08: 카드뉴스 양산 일시 정지. 릴스만 게시.
         ]
 
         # 오늘 이미 게시된 수 확인 (Meta API 25포스트/일 한도)

@@ -288,23 +288,21 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     topic_proposal_utc = _utc_hour_for_kst(7)  # 07:00 KST = 22:00 UTC (전날) — 1% 게이트 5후보
-    schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
-    schedule.every(10).minutes.do(topic_selected_poll_job)  # 사용자 슬랙 선택 → content_generator 자동 트리거
-    schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
-    schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)  # daily_job 30분 후 리마인더
-    schedule.every(30).minutes.do(designer_poll_job)
+    # 2026-05-08: 양산형 카드뉴스 일시 정지 (사용자 결정). 본인 계정에 손으로 개선해서 게시.
+    # 릴스 자동 게시는 살리되, 카드뉴스 생성 라인 5개 잡만 비활성화.
+    # schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
+    # schedule.every(10).minutes.do(topic_selected_poll_job)
+    # schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
+    # schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)
+    # schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(2).hours.do(analytics_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
-    print(f"[Cron] topic_proposal — 매일 {topic_proposal_utc:02d}:00 UTC (= KST 07:00) 5신호 후보 제안")
-    print("[Cron] topic_selected_poll — 10분 간격 (사용자 슬랙 선택 → content_generator 자동 트리거)")
-    print(f"[Cron] 스케줄러 시작 — 매일 {daily_utc:02d}:00 UTC (= KST 09:00) 실행")
-    print(f"[Cron] pending_reminder — 매일 {daily_utc:02d}:30 UTC (24h+ 방치 콘텐츠 알림)")
-    print("[Cron] designer poll — 30분 간격 (approved → design_ready 자동 체인)")
-    print("[Cron] publisher poll — 30분 간격")
+    print("[Cron] ⏸ 카드뉴스 생성 라인 5개 잡 일시 정지 (topic_proposal/topic_selected_poll/daily/pending_reminder/designer)")
+    print("[Cron] publisher poll — 30분 간격 (content_type='feed'는 가드로 스킵, 릴스만 게시)")
     print("[Cron] analytics poll — 2시간 간격 (48h 성과 수집)")
     print("[Cron] onboarding poll — 6시간 간격")
     print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")
