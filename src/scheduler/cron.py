@@ -26,9 +26,9 @@ load_dotenv()
 import schedule
 import uvicorn
 
-from src.agents.orchestrator import run_all_active as _orchestrator_run_all
+from src.agents.orchestrator import run as _orchestrator_run
 from src.agents.feedback_learner import run_all_active as feedback_learner_run_all
-from src.agents.designer import run_all_active as designer_run_all_active
+from src.agents.designer import run as _designer_run
 from src.agents.reporter import run_all_active as reporter_run_all_active
 from src.agents.onboarder import run_pending as onboarder_run_pending
 from src.agents.publisher import run_all_active as publisher_run_all_active
@@ -37,6 +37,14 @@ from src.api.approve import app as api_app
 from src.utils.ig_token import refresh_all_active as ig_token_refresh_all
 
 KST_OFFSET = 9  # UTC+9
+
+# 2026-05-08: 카드뉴스 자동화 활성 클라이언트 화이트리스트.
+# planb_pm은 사용자가 손으로 개선해서 게시 (양산 일시 정지).
+# 추가 제거: 환경변수 CARDNEWS_ACTIVE_CLIENTS="fit_ai_founder,planb_pm" 식으로 오버라이드 가능.
+_CARDNEWS_ACTIVE_CLIENTS = [
+    s.strip() for s in os.environ.get("CARDNEWS_ACTIVE_CLIENTS", "fit_ai_founder").split(",")
+    if s.strip()
+]
 
 
 def _utc_hour_for_kst(kst_hour: int) -> int:
@@ -53,10 +61,16 @@ def _safe_job(name: str, fn, *args, **kwargs):
 
 
 def daily_job() -> None:
-    """매일 09:00 KST: trend_scan → info_extract → lead_magnet 생성 → Slack 승인 요청."""
+    """매일 09:00 KST: trend_scan → info_extract → lead_magnet 생성 → Slack 승인 요청.
+    카드뉴스 화이트리스트(_CARDNEWS_ACTIVE_CLIENTS)만 처리.
+    """
     now = datetime.now(timezone.utc)
-    print(f"[Cron] daily_job 시작 — {now.isoformat()}")
-    results = _safe_job("daily_job", _orchestrator_run_all)
+    print(f"[Cron] daily_job 시작 — {now.isoformat()} (대상: {_CARDNEWS_ACTIVE_CLIENTS})")
+    results = []
+    for slug in _CARDNEWS_ACTIVE_CLIENTS:
+        r = _safe_job(f"daily:{slug}", _orchestrator_run, slug)
+        if isinstance(r, dict):
+            results.append(r)
     ok = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] daily_job 완료 — {ok}/{len(results)} 성공")
 
@@ -88,10 +102,16 @@ def onboarding_poll_job() -> None:
 
 
 def designer_poll_job() -> None:
-    """30분마다 approved 상태 아이디어 → designer 실행 (human gate 이후 자동 체인)."""
+    """30분마다 approved 상태 아이디어 → designer 실행 (human gate 이후 자동 체인).
+    카드뉴스 화이트리스트(_CARDNEWS_ACTIVE_CLIENTS)만 처리.
+    """
     now = datetime.now(timezone.utc)
-    print(f"[Cron] designer_poll 시작 — {now.isoformat()}")
-    results = _safe_job("designer_poll", designer_run_all_active)
+    print(f"[Cron] designer_poll 시작 — {now.isoformat()} (대상: {_CARDNEWS_ACTIVE_CLIENTS})")
+    results = []
+    for slug in _CARDNEWS_ACTIVE_CLIENTS:
+        r = _safe_job(f"designer:{slug}", _designer_run, slug)
+        if isinstance(r, dict):
+            results.append(r)
     designed = sum(1 for r in results if r.get("status") == "completed")
     print(f"[Cron] designer_poll 완료 — {designed}/{len(results)} 처리")
 
@@ -143,6 +163,8 @@ def pending_reminder_job() -> None:
             slug = client.get("slug", "")
             if not slug:
                 continue
+            if slug not in _CARDNEWS_ACTIVE_CLIENTS:
+                continue  # 카드뉴스 일시 정지된 클라이언트는 24h 방치 알림도 끔
             client_id = client.get("id")
             client_name = client.get("name", slug)
             slack_webhook = client.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
@@ -213,6 +235,11 @@ def topic_selected_poll_job() -> None:
                 _db.update("content_ideas", filters={"id": idea_id}, patch={"status": "failed", "last_error": "client not found"})
                 continue
             slug = clients[0].get("slug", "")
+            if slug not in _CARDNEWS_ACTIVE_CLIENTS:
+                # 카드뉴스 양산 일시 정지된 클라이언트는 처리하지 않고 그대로 둠.
+                # 다시 켜질 때까지 topic_selected 상태로 대기.
+                print(f"[topic_selected_poll:{idea_id[:8]}] ⏸ skip — slug={slug} 카드뉴스 일시 정지")
+                continue
 
             # 새 콘텐츠 생성 (status=pending으로 insert됨)
             new_ideas = content_gen(client_slug=slug, topic=hook, count=1)
@@ -258,6 +285,8 @@ def topic_proposal_job() -> None:
         slug = client.get("slug", "")
         if not slug:
             continue
+        if slug not in _CARDNEWS_ACTIVE_CLIENTS:
+            continue  # 카드뉴스 양산 일시 정지된 클라이언트 스킵
         webhook = client.get("slack_channel_webhook") or os.environ.get("SLACK_WEBHOOK_URL", "")
         try:
             candidates = _safe_job(f"propose:{slug}", topic_propose, slug)
@@ -288,21 +317,27 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     topic_proposal_utc = _utc_hour_for_kst(7)  # 07:00 KST = 22:00 UTC (전날) — 1% 게이트 5후보
-    # 2026-05-08: 양산형 카드뉴스 일시 정지 (사용자 결정). 본인 계정에 손으로 개선해서 게시.
-    # 릴스 자동 게시는 살리되, 카드뉴스 생성 라인 5개 잡만 비활성화.
-    # schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
-    # schedule.every(10).minutes.do(topic_selected_poll_job)
-    # schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
-    # schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)
-    # schedule.every(30).minutes.do(designer_poll_job)
+    # 2026-05-08: 카드뉴스 자동화 화이트리스트 — _CARDNEWS_ACTIVE_CLIENTS만 처리.
+    # planb_pm은 양산 일시 정지 (사용자가 손으로 개선해서 게시).
+    schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
+    schedule.every(10).minutes.do(topic_selected_poll_job)
+    schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
+    schedule.every().day.at(f"{daily_utc:02d}:30").do(pending_reminder_job)
+    schedule.every(30).minutes.do(designer_poll_job)
     schedule.every(30).minutes.do(publisher_poll_job)
     schedule.every(2).hours.do(analytics_poll_job)
     schedule.every(6).hours.do(onboarding_poll_job)
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
-    print("[Cron] ⏸ 카드뉴스 생성 라인 5개 잡 일시 정지 (topic_proposal/topic_selected_poll/daily/pending_reminder/designer)")
-    print("[Cron] publisher poll — 30분 간격 (content_type='feed'는 가드로 스킵, 릴스만 게시)")
+    print(f"[Cron] 🎯 카드뉴스 자동화 활성 클라이언트: {_CARDNEWS_ACTIVE_CLIENTS}")
+    print("[Cron] ⏸ 카드뉴스 일시 정지 클라이언트: planb_pm (사용자 손 개선 모드)")
+    print(f"[Cron] topic_proposal — 매일 {topic_proposal_utc:02d}:00 UTC (= KST 07:00) 5신호 후보 제안")
+    print("[Cron] topic_selected_poll — 10분 간격")
+    print(f"[Cron] daily_job — 매일 {daily_utc:02d}:00 UTC (= KST 09:00)")
+    print(f"[Cron] pending_reminder — 매일 {daily_utc:02d}:30 UTC")
+    print("[Cron] designer poll — 30분 간격")
+    print("[Cron] publisher poll — 30분 간격 (planb_pm은 feed 게시 가드 적용)")
     print("[Cron] analytics poll — 2시간 간격 (48h 성과 수집)")
     print("[Cron] onboarding poll — 6시간 간격")
     print(f"[Cron] 주간 리포트 — 매주 일요일 {weekly_report_utc_hour:02d}:00 UTC (= KST 18:00)")

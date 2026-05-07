@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src.db.client import SupabaseClient
-from src.notifications.slack import notify_published, notify_error
+from src.notifications.slack import notify_published, notify_error, notify_token_expired
 
 _GRAPH_API_VERSION = "v21.0"
 _GRAPH_BASE = f"https://graph.facebook.com/{_GRAPH_API_VERSION}"
@@ -56,6 +56,28 @@ def _is_rate_limit_error(msg: str) -> bool:
         return False
     low = msg.lower()
     return any(p.lower() in low for p in _RATE_LIMIT_PATTERNS)
+
+
+# IG access token 만료/무효 패턴 — Meta error codes 190/102/463/467/200, OAuth 401.
+# rate_limit과 분리: rate는 자동 backoff 가능, token은 사람이 갱신해야만 풀림.
+_TOKEN_EXPIRED_PATTERNS = (
+    "(#190)",  # Access token has expired
+    "(#102)",  # Session has expired or invalid
+    "(#463)",  # Access token has expired (long-lived)
+    "(#467)",  # Invalid access token
+    "access token has expired",
+    "session has been invalidated",
+    "session is invalid",
+    "error validating access token",
+    "the access token could not be decrypted",
+)
+
+
+def _is_token_expired_error(msg: str) -> bool:
+    if not msg:
+        return False
+    low = msg.lower()
+    return any(p.lower() in low for p in _TOKEN_EXPIRED_PATTERNS)
 
 
 # IG container expires ~24h. 보수적으로 22h 후엔 stale로 간주하고 재생성.
@@ -344,12 +366,18 @@ def run(client_slug: str) -> dict:
         )
         now_iso = datetime.now(timezone.utc).isoformat()
         # next_retry_at 미래면 backoff 중 — skip해서 매 cron 8 API call 낭비 차단
+        # 2026-05-08: 카드뉴스 양산 화이트리스트. 환경변수로 오버라이드 가능.
+        # 화이트리스트에 없는 클라이언트는 feed(카드뉴스) 자동 게시 차단, 릴스는 통과.
+        cardnews_active = {
+            s.strip() for s in os.environ.get("CARDNEWS_ACTIVE_CLIENTS", "fit_ai_founder").split(",")
+            if s.strip()
+        }
         ready = [
             r for r in all_final
             if r.get("human_approved") is True
             and r.get("design_url")
             and (not r.get("next_retry_at") or r["next_retry_at"] <= now_iso)
-            and r.get("content_type") != "feed"  # 2026-05-08: 카드뉴스 양산 일시 정지. 릴스만 게시.
+            and not (r.get("content_type") == "feed" and client_slug not in cardnews_active)
         ]
 
         # 오늘 이미 게시된 수 확인 (Meta API 25포스트/일 한도)
