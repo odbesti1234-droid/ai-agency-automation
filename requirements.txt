@@ -12,6 +12,7 @@ sentence-transformers>=3.0.0
 pytrends>=4.9.0
 urllib3<2  # pytrends 4.9.x 호환 (urllib3 v2의 method_whitelist 제거 이슈)
 beautifulsoup4>=4.12.0
+sentry-sdk[fastapi,httpx]>=2.18.0
 # 주: supabase-py는 Python 3.14에서 pyiceberg 빌드 이슈가 있어 제외.
 # Supabase는 httpx로 REST API 직접 호출 (src/db/client.py).
 # Playwright: HTML→PNG 렌더링 (카드뉴스 이미지 생성).

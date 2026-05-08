@@ -450,6 +450,16 @@ def _safe_process(channel: str, message: dict, event_id: str | None) -> None:
         process_intake_message(channel, message, event_id)
     except Exception as e:
         print(f"[slack_intake] BackgroundTask 예외: {type(e).__name__}: {e}\n{traceback.format_exc()[:800]}", flush=True)
+        try:
+            from src.sentry_init import capture as sentry_capture
+            sentry_capture(e, extra={
+                "channel": channel,
+                "event_id": event_id,
+                "message_ts": message.get("ts"),
+                "user": message.get("user"),
+            })
+        except Exception:
+            pass
 
 
 @app.post("/slack/events")

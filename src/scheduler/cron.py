@@ -23,6 +23,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Sentry — DSN 있으면 활성화, 없으면 silent. cron + FastAPI 같은 process라 한 곳만 init하면 됨.
+from src.sentry_init import init_sentry, capture as sentry_capture
+init_sentry()
+
 import schedule
 import uvicorn
 
@@ -58,6 +62,7 @@ def _safe_job(name: str, fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except Exception as e:
         print(f"[Cron] ❌ {name} 실패 — {e}")
+        sentry_capture(e, extra={"cron_job": name, "args": str(args)[:200]})
         return []
 
 

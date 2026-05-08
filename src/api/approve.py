@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Sentry — DSN 있으면 활성화, 없으면 silent. cron.py와 같은 process라 idempotent.
+from src.sentry_init import init_sentry  # noqa: E402
+init_sentry()
+
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
