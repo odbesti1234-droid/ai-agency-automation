@@ -557,8 +557,8 @@ def notify_reel_ready(
     hashtags = idea.get("hashtags", [])
     hashtag_preview = " ".join(hashtags[:5]) + (f" +{len(hashtags) - 5}" if len(hashtags) > 5 else "")
 
-    approve_url = make_approve_url(idea_id, "approve", stage="final")
-    reject_url = make_approve_url(idea_id, "reject", stage="final")
+    approve_url = make_approve_url(idea_id, "approved", stage="final")
+    reject_url = make_approve_url(idea_id, "rejected", stage="final")
 
     text = f":clapper: *[{client_name}] 릴스 검수 대기* — {hook}"
 

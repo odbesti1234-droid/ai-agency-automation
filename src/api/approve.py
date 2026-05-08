@@ -93,6 +93,47 @@ async def approve(
         idea = rows[0]
         current_status = idea.get("status", "")
 
+        if stage == "final":
+            # 릴스 검수 승인 — caption_generator → status='design_ready', reel_uploader → design_status='ready'.
+            # 사용자가 슬랙 [승인 → 게시] 클릭 → status='final_approved'+human_approved=True.
+            # publisher cron(30분)이 final_approved를 잡아 IG Reels 게시.
+            content_type = idea.get("content_type", "")
+            design_status = idea.get("design_status", "")
+            if current_status != "design_ready":
+                return HTMLResponse(
+                    content=_html_page(
+                        "이미 처리됨",
+                        f"이 릴스는 이미 '{current_status}' 상태입니다.",
+                        success=False,
+                    )
+                )
+            if design_status != "ready":
+                return HTMLResponse(
+                    content=_html_page(
+                        "영상 미도착",
+                        f"릴스 영상 업로드가 끝나지 않았습니다 (design_status={design_status!r}). 잠시 후 다시 시도하세요.",
+                        success=False,
+                    )
+                )
+            if action == "approved":
+                db.update("content_ideas", filters={"id": idea_id}, patch={
+                    "status": "final_approved",
+                    "human_approved": True,
+                })
+                hook = (idea.get("hook") or "")[:60]
+                return HTMLResponse(
+                    content=_html_page(
+                        "릴스 최종 승인",
+                        f"'{hook}...' 릴스가 승인되었습니다. publisher cron이 30분 내 게시합니다.",
+                        success=True,
+                    )
+                )
+            else:
+                db.update("content_ideas", filters={"id": idea_id}, patch={"status": "rejected"})
+                return HTMLResponse(
+                    content=_html_page("릴스 거부", "릴스가 거부되었습니다.", success=False)
+                )
+
         if stage == "design":
             allowed_statuses = ("design_ready",)
             if current_status not in allowed_statuses:
@@ -198,7 +239,12 @@ def _html_confirm_page(idea_id: str, action: str, token: str, stage: str) -> str
     label = "승인" if action == "approved" else "거부"
     color = "#22c55e" if action == "approved" else "#ef4444"
     icon = "✅" if action == "approved" else "❌"
-    stage_label = "디자인 최종" if stage == "design" else "콘텐츠"
+    if stage == "final":
+        stage_label = "릴스"
+    elif stage == "design":
+        stage_label = "디자인 최종"
+    else:
+        stage_label = "콘텐츠"
     return f"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><title>{stage_label} {label} 확인</title>
 <style>body{{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc}}
