@@ -328,7 +328,9 @@ def process_intake_message(channel: str, message: dict, event_id: str | None = N
         return {"ok": True, "skipped": "bot_or_subtype"}
 
     msg_ts = message.get("ts") or ""
-    intake_key = (event_id or msg_ts).strip()
+    # message.ts 우선 — 같은 메시지가 다른 event_id로 재유입돼도 차단되도록.
+    # event_id는 fallback (Slack outer envelope timestamp).
+    intake_key = (msg_ts or event_id or "").strip()
     if not intake_key:
         print("[slack_intake] skip — intake_key 없음 (event_id·ts 모두 누락)", flush=True)
         return {"ok": True, "skipped": "no_key"}
