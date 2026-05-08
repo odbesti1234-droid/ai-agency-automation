@@ -32,9 +32,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import HTTPException, Request
+from fastapi import BackgroundTasks, HTTPException, Request
 
 from src.api.approve import app  # 같은 FastAPI 인스턴스에 라우트 추가
+
+# message.ts 단위 idempotency — 같은 메시지가 여러 번 webhook 들어와도 한 번만 처리.
+# Slack이 timeout/네트워크 사유로 같은 이벤트 재전송하는 케이스 차단 (실측: 1시간 간격 재유입).
+# 컨테이너 재시작 시 휘발하지만, 정상 운영 중 발생하는 알림 폭주는 즉시 차단됨.
+_PROCESSED_TS: set[str] = set()
+_PROCESSED_TS_MAX = 5000  # 메모리 보호 — FIFO 트림
 
 _SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 _BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
@@ -230,7 +236,19 @@ def process_intake_message(channel: str, message: dict) -> dict:
     if message.get("bot_id") or sub in SKIP_SUBTYPES:
         print(f"[slack_intake] skip bot/subtype={sub!r}", flush=True)
         return {"ok": True, "skipped": "bot_or_subtype"}
-    print(f"[slack_intake] processing ts={message.get('ts')} sub={sub!r} text_len={len(message.get('text') or '')} files={len(message.get('files') or [])}", flush=True)
+
+    msg_ts = message.get("ts") or ""
+    if msg_ts and msg_ts in _PROCESSED_TS:
+        print(f"[slack_intake] skip duplicate ts={msg_ts}", flush=True)
+        return {"ok": True, "skipped": "duplicate_ts"}
+    if msg_ts:
+        _PROCESSED_TS.add(msg_ts)
+        if len(_PROCESSED_TS) > _PROCESSED_TS_MAX:
+            # FIFO 트림 — set에 순서 없으니 임의로 절반 비움
+            for old_ts in list(_PROCESSED_TS)[: _PROCESSED_TS_MAX // 2]:
+                _PROCESSED_TS.discard(old_ts)
+
+    print(f"[slack_intake] processing ts={msg_ts} sub={sub!r} text_len={len(message.get('text') or '')} files={len(message.get('files') or [])}", flush=True)
 
     text = (message.get("text") or "").strip()
     files = message.get("files") or []
@@ -252,6 +270,9 @@ def process_intake_message(channel: str, message: dict) -> dict:
     title = info.get("property", {}).get("title", "")
     safe_title = re.sub(r"[^\w가-힣]+", "_", title)[:30] if title else ""
     folder_name = f"매물_{next_idx:03d}" + (f"_{safe_title}" if safe_title else "")
+    # Supabase Storage는 한글 key 거부 (Invalid key 400 에러).
+    # 로컬 폴더는 한글 그대로 유지하되 Storage object key는 ASCII만 사용.
+    storage_key = f"property_{next_idx:03d}"
     property_dir = reels_root / folder_name
     property_dir.mkdir(exist_ok=True)
     info_path = property_dir / "info.json"
@@ -276,7 +297,7 @@ def process_intake_message(channel: str, message: dict) -> dict:
 
     photo_urls: list[str] = []
     if files:
-        photo_urls = _process_slack_files(files, folder_name, property_dir)
+        photo_urls = _process_slack_files(files, storage_key, property_dir)
         if photo_urls:
             info["photos"] = photo_urls
             info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -295,13 +316,21 @@ def process_intake_message(channel: str, message: dict) -> dict:
 
 
 @app.post("/slack/events")
-async def slack_events(request: Request) -> dict:
-    """Slack Events API webhook (polling과 양립 — webhook 작동 시 우선 처리)."""
+async def slack_events(request: Request, background_tasks: BackgroundTasks) -> dict:
+    """Slack Events API webhook — 3초 timeout 회피 위해 BackgroundTasks로 비동기 처리.
+
+    Slack은 3초 안에 200 응답 못 받으면 retry 보냄. Storage upload + Claude API
+    동기 처리 시 8~15초 걸려서 retry 폭주 발생 (실측: 같은 ts 1시간 간격 N번 재유입).
+    여기선 검증·라우팅만 하고 실제 처리는 BackgroundTasks로 throw.
+    Retry 헤더(X-Slack-Retry-Num)도 즉시 200 + skip — 중복 처리 차단 보강.
+    """
     raw = await request.body()
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
+    retry_num = request.headers.get("x-slack-retry-num", "")
+    retry_reason = request.headers.get("x-slack-retry-reason", "")
 
-    print(f"[slack_events] WEBHOOK RECEIVED ts={timestamp} body_len={len(raw)} sig_present={bool(signature)}", flush=True)
+    print(f"[slack_events] WEBHOOK RECEIVED ts={timestamp} body_len={len(raw)} sig_present={bool(signature)} retry={retry_num!r} reason={retry_reason!r}", flush=True)
 
     if not _verify_slack_signature(timestamp, raw, signature):
         raise HTTPException(status_code=401, detail="invalid signature")
@@ -311,6 +340,11 @@ async def slack_events(request: Request) -> dict:
     if payload.get("type") == "url_verification":
         return {"challenge": payload.get("challenge", "")}
 
+    # Slack retry는 즉시 200 + 처리 skip — idempotency 보강.
+    if retry_num:
+        print(f"[slack_events] skip retry attempt={retry_num} reason={retry_reason!r}", flush=True)
+        return {"ok": True, "skipped": "retry"}
+
     event = payload.get("event", {})
     if event.get("type") != "message":
         return {"ok": True}
@@ -319,4 +353,6 @@ async def slack_events(request: Request) -> dict:
     if _INTAKE_CHANNEL and channel != _INTAKE_CHANNEL:
         return {"ok": True}
 
-    return process_intake_message(channel, event)
+    # 처리는 background — webhook은 즉시 200 응답해서 timeout retry 차단.
+    background_tasks.add_task(process_intake_message, channel, event)
+    return {"ok": True, "queued": True}
