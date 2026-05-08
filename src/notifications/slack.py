@@ -18,6 +18,41 @@ load_dotenv()
 from src.api.approve import make_approve_url, make_brief_url, make_feedback_url
 
 
+def post_to_intake_channel(text: str, blocks: list[dict] | None = None) -> bool:
+    """Bot Token + SLACK_INTAKE_CHANNEL_ID로 chat.postMessage.
+
+    클라이언트 webhook이 없거나 인테이크 채널로 직접 보내야 할 때 사용.
+    릴스 검수 알림(notify_reel_ready)이 plan_b 채널에 webhook 미설정이라 카드뉴스 채널로
+    잘못 가던 사고(2026-05-08)를 차단하기 위해 추가.
+    """
+    bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    channel = os.environ.get("SLACK_INTAKE_CHANNEL_ID", "")
+    if not bot_token or not channel:
+        print("[Slack] SLACK_BOT_TOKEN 또는 SLACK_INTAKE_CHANNEL_ID 미설정 — 인테이크 채널 게시 건너뜀")
+        return False
+    payload: dict = {"channel": channel, "text": text}
+    if blocks:
+        payload["blocks"] = blocks
+    try:
+        r = httpx.post(
+            "https://slack.com/api/chat.postMessage",
+            json=payload,
+            headers={"Authorization": f"Bearer {bot_token}"},
+            timeout=30,
+        )
+        if r.status_code != 200:
+            print(f"[Slack] chat.postMessage HTTP {r.status_code}: {r.text[:200]}")
+            return False
+        body = r.json()
+        if not body.get("ok", False):
+            print(f"[Slack] chat.postMessage error={body.get('error', '')}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[Slack] chat.postMessage 오류: {e}")
+        return False
+
+
 def send(
     text: str,
     blocks: list[dict] | None = None,
@@ -600,7 +635,11 @@ def notify_reel_ready(
             ],
         },
     ]
-    return send(text, blocks=blocks, webhook_url=webhook_url)
+    # webhook_url 명시되면 그대로 webhook으로. 없으면 Bot Token 기반 chat.postMessage로 인테이크 채널에.
+    # plan_b처럼 client.slack_channel_webhook=NULL이라 카드뉴스 채널로 잘못 가던 사고(2026-05-08) 차단.
+    if webhook_url:
+        return send(text, blocks=blocks, webhook_url=webhook_url)
+    return post_to_intake_channel(text, blocks=blocks)
 
 
 def notify_token_expired(
