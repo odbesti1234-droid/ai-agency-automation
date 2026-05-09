@@ -31,7 +31,7 @@ import os
 import re
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -263,13 +263,18 @@ def _process_slack_files(
     files: list[dict],
     storage_key: str,
     property_dir: Path,
+    start_idx: int = 1,
 ) -> tuple[list[str], list[str]]:
-    """슬랙 첨부 이미지 → Storage + 매물 폴더. (성공 URL 리스트, 실패 사유 리스트) 반환."""
+    """슬랙 첨부 이미지 → Storage + 매물 폴더. (성공 URL 리스트, 실패 사유 리스트) 반환.
+
+    start_idx: photo_NN 인덱스 시작값. grouping 시 기존 photo_urls 길이+1을 넘겨 누적.
+    """
     public_urls: list[str] = []
     failures: list[str] = []
     photos_dir = property_dir / "photos"
     photos_dir.mkdir(exist_ok=True)
-    for i, f in enumerate(files, 1):
+    for offset, f in enumerate(files):
+        i = start_idx + offset
         mimetype = f.get("mimetype", "")
         if mimetype not in _IMAGE_MIME:
             failures.append(f"#{i}: 지원 안 되는 mime ({mimetype})")
@@ -289,6 +294,82 @@ def _process_slack_files(
             failures.append(f"#{i}: {str(e)[:100]}")
             print(f"[slack_intake] 사진 {i} 실패: {e}", flush=True)
     return public_urls, failures
+
+
+def _find_recent_property(channel: str, before_ts: str, window_s: int = 300) -> dict | None:
+    """5분 이내 같은 채널의 직전 매물 1건 (created_at DESC). grouping용."""
+    if not _SUPABASE_URL or not _SERVICE_KEY:
+        return None
+    try:
+        before_dt = datetime.fromtimestamp(float(before_ts), tz=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+    after_dt = before_dt - timedelta(seconds=window_s)
+    try:
+        r = httpx.get(
+            f"{_SUPABASE_URL}/rest/v1/reels_properties",
+            params={
+                "channel": f"eq.{channel}",
+                "created_at": f"gte.{after_dt.isoformat()}",
+                "order": "created_at.desc",
+                "limit": "1",
+                "select": "id,idx,folder_name,channel,info_json,photo_urls,created_at",
+            },
+            headers=_DB_HEADERS,
+            timeout=10,
+        )
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        print(f"[slack_intake] _find_recent_property 실패: {e}", flush=True)
+        return None
+    data = r.json() or []
+    return data[0] if data else None
+
+
+def _append_photos_to_grouped_property(
+    intake_key: str,
+    channel: str,
+    message: dict,
+    files: list[dict],
+    recent: dict,
+) -> dict:
+    """직전 매물에 사진 누적. start_idx = 기존 photo_urls 길이 + 1."""
+    property_id = recent.get("id")
+    idx = int(recent.get("idx", 0))
+    folder_name = recent.get("folder_name") or f"매물_{idx:03d}"
+    storage_key = f"property_{idx:03d}"
+    existing_urls = list(recent.get("photo_urls") or [])
+    start_idx = len(existing_urls) + 1
+    msg_ts = message.get("ts") or ""
+
+    property_dir = Path(_REELS_ROOT) / folder_name
+    property_dir.mkdir(parents=True, exist_ok=True)
+
+    new_urls, failures = _process_slack_files(files, storage_key, property_dir, start_idx=start_idx)
+    merged_urls = existing_urls + new_urls
+
+    info = recent.get("info_json") if isinstance(recent.get("info_json"), dict) else {}
+    info["photos"] = merged_urls
+    try:
+        (property_dir / "info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[slack_intake] grouped info.json write 실패: {e}", flush=True)
+
+    if property_id:
+        _update_property_row(property_id, {"photo_urls": merged_urls, "info_json": info})
+
+    _mark_intake(intake_key, status="grouped", property_id=property_id)
+
+    n_new = len(new_urls)
+    fail_n = len(failures)
+    note = f" (실패 {fail_n}건: {failures[0][:60]}...)" if fail_n else ""
+    _post_slack_reply(
+        channel,
+        msg_ts,
+        f":heavy_plus_sign: *{folder_name}* 사진 {n_new}장 추가 (총 {len(merged_urls)}장){note}",
+    )
+    print(f"[slack_intake] ✅ grouped {folder_name} +{n_new}장 → 총 {len(merged_urls)}장 (실패 {fail_n})", flush=True)
+    return {"ok": True, "grouped": True, "folder": folder_name, "added": n_new, "total": len(merged_urls), "property_id": property_id}
 
 
 def _post_slack_reply(channel: str, thread_ts: str | None, text: str) -> None:
@@ -348,6 +429,26 @@ def process_intake_message(channel: str, message: dict, event_id: str | None = N
     if (not text or len(text) < 10) and not files:
         _mark_intake(intake_key, status="too_short")
         return {"ok": True, "skipped": "too_short"}
+
+    # 5분 grouping — 텍스트 짧고 사진만 있는 메시지는 직전 매물(같은 채널·5분 이내)에 누적.
+    # 안전판: text >= 10자면 신규 매물 시도 (텍스트 있으면 grouping 안 함).
+    if (not text or len(text) < 10) and files:
+        recent = _find_recent_property(channel, msg_ts, window_s=300)
+        if recent:
+            return _append_photos_to_grouped_property(
+                intake_key=intake_key,
+                channel=channel,
+                message=message,
+                files=files,
+                recent=recent,
+            )
+        _mark_intake(intake_key, status="too_short_no_recent")
+        _post_slack_reply(
+            channel,
+            msg_ts,
+            ":warning: 사진만 있고 텍스트가 없습니다. 매물 정보 텍스트와 함께 다시 보내주세요. (직전 매물 5분 초과)",
+        )
+        return {"ok": True, "skipped": "too_short_no_recent"}
 
     thread_ts = msg_ts
 
