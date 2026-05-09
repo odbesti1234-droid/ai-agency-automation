@@ -1,4 +1,4 @@
-"""raster_designer.py — gpt-image-1 / gpt-image-1.5 기반 인스타 카드뉴스 8장 생성.
+"""raster_designer.py — gpt-image-2 (default) / 1.5 / 1 기반 인스타 카드뉴스 8장 생성.
 
 기존 freestyle_designer(Sonnet HTML→Playwright PNG, 1500+줄)를 대체하는 raster 라인.
 8장 시퀀스: cover → hook → tip×5 → CTA. 시그니처 헤더 박힘.
@@ -6,16 +6,19 @@
 Output 1024×1024 PNG → docs/cardnews-raster/round_{ts}/slide_NN_*.png
 
 비용 (medium quality, 2026-05 기준):
-- gpt-image-1.5 standard: $0.034/장 × 8 = $0.272
-- batch (50% 할인): $0.136/8장 → 매일 6장 양산 ≈ 월 7천원
+- gpt-image-2 standard: $0.034/장 × 8 = $0.272
+- batch (50% 할인): $0.136/8장 → 매일 6장 양산 ≈ 월 4천원
 
 CLI:
-  python -m src.agents.raster_designer --first-only            # cover 1장만 (검증)
-  python -m src.agents.raster_designer                         # 8장 전체
-  python -m src.agents.raster_designer --gpt15 --quality high  # 최고급
+  python -m src.agents.raster_designer --first-only             # cover 1장만 (검증)
+  python -m src.agents.raster_designer                          # 8장 전체
+  python -m src.agents.raster_designer --model gpt-image-2 --quality high
+  python -m src.agents.raster_designer --to-pipeline \\
+      --client fit_ai_founder --round 20260509_155426            # 합격본 → DB + Slack
 """
 import argparse
 import base64
+import json
 import os
 import sys
 from datetime import datetime
@@ -217,6 +220,156 @@ def main(only_first: bool = False, model: str = "gpt-image-2",
     return paths
 
 
+# ============================================================================
+# Pipeline 연결 — 합격본 8장 → Storage 업로드 → content_ideas insert → Slack
+# ============================================================================
+
+_CAPTION_SYSTEM = """당신은 인스타그램 카드뉴스 게시 직전 캡션·해시태그 작성기다.
+
+입력: 8장 카드뉴스의 슬라이드 데이터(role/headline/highlight/subtext) + brand_voice.
+출력: 게시용 caption(인스타 본문) + hashtags 리스트. JSON으로 정확히.
+
+[caption 룰]
+- brand_voice의 톤 그대로. 1인칭, 직설, 실경험 공유. AI 슬롭 어휘 금지(혁신/프리미엄/완벽한/꼭/여러분/~를 통해 등)
+- 분량 ~200~350자
+- 1줄 훅 → 캐러셀 안내 1줄 → 본문 핵심 2~3줄 → CTA(저장/공유/DM 중 1개)
+- 이모지 최대 3개 이내, 자연스럽게
+- 카드뉴스 내용을 그대로 베끼지 말고 본문은 "더 궁금하면 캐러셀에" 식으로 유도
+
+[hashtags 룰]
+- brand_voice의 hashtag_sets에서 콘텐츠 주제(클로드/AI/대학생/공부)와 가장 맞는 set 1~2개를 골라 12~15개 추출
+- 너무 일반적인 해시태그 비율 줄이고 계정 정체성 박힌 것 우선
+- 중복 0건
+
+[출력 JSON 스키마]
+{"caption": "...", "hashtags": ["#tag", ...]}
+"""
+
+
+def _generate_caption_hashtags(slides: list[dict], brand_voice: dict) -> dict:
+    """8장 슬라이드 데이터 + brand_voice → caption + hashtags."""
+    import anthropic
+
+    anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    slides_summary = "\n".join(
+        f"{s['n']}. [{s['role']}] {s['headline']} (강조: {s['highlight']}) — {s['subtext']}"
+        for s in slides
+    )
+
+    bv_compact = {
+        "tone": brand_voice.get("tone"),
+        "description": brand_voice.get("description"),
+        "positioning": brand_voice.get("positioning"),
+        "hashtag_sets": brand_voice.get("hashtag_sets", [])[:5],
+        "audience_profile": brand_voice.get("audience_profile", {}).get("core_desire"),
+        "forbid_keywords": brand_voice.get("forbid_keywords", []),
+    }
+
+    user_msg = f"""[슬라이드 8장]
+{slides_summary}
+
+[brand_voice]
+{json.dumps(bv_compact, ensure_ascii=False)}
+
+이 카드뉴스 게시용 caption + hashtags JSON 출력."""
+
+    resp = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=2000,
+        system=_CAPTION_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = resp.content[0].text.strip()
+
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+
+    parsed = json.loads(raw)
+    caption = parsed["caption"].strip()
+    hashtags = [t if t.startswith("#") else f"#{t}" for t in parsed["hashtags"]]
+    return {"caption": caption, "hashtags": hashtags}
+
+
+def save_to_pipeline(
+    client_slug: str,
+    round_id: str,
+    source_type: str = "raster_manual",
+) -> str:
+    """합격본 8장 (docs/cardnews-raster/round_<id>/) → DB + Storage + Slack.
+
+    Returns: idea_id (UUID)
+    """
+    from src.db.client import db
+    from src.notifications.slack import notify_design_ready
+    from src.utils.storage import upload_png
+
+    repo_root = Path(__file__).resolve().parents[2]
+    round_dir = repo_root / "docs" / "cardnews-raster" / f"round_{round_id}"
+    png_paths = sorted(round_dir.glob("slide_*.png"))
+    if len(png_paths) != 8:
+        raise RuntimeError(f"8장 필요, 발견={len(png_paths)} ({round_dir})")
+
+    clients = db.select("clients", filters={"slug": client_slug}, limit=1)
+    if not clients:
+        raise RuntimeError(f"client 없음: {client_slug}")
+    client = clients[0]
+    client_id = client["id"]
+    brand_voice = client.get("brand_voice") or {}
+    slack_webhook = client.get("slack_channel_webhook") or None
+
+    print(f"[1/4] caption + hashtags 생성 (Sonnet 4.6)...")
+    cap = _generate_caption_hashtags(SLIDES, brand_voice)
+    print(f"  caption ({len(cap['caption'])}자), hashtags ({len(cap['hashtags'])}개)")
+
+    print(f"[2/4] 8장 PNG → Supabase Storage 업로드...")
+    import uuid as _uuid
+    idea_uuid = str(_uuid.uuid4())
+    carousel_urls: list[str] = []
+    for path in png_paths:
+        object_path = f"raster-final/{idea_uuid}/{path.name}"
+        url = upload_png(path.read_bytes(), object_path)
+        carousel_urls.append(url)
+        print(f"  {path.name} -> {url}")
+
+    print(f"[3/4] content_ideas insert (status=design_ready)...")
+    cover_headline = SLIDES[0]["headline"].replace(" / ", " ")
+    row = {
+        "id": idea_uuid,
+        "client_id": client_id,
+        "hook": cover_headline,
+        "caption": cap["caption"],
+        "hashtags": cap["hashtags"],
+        "design_url": carousel_urls[0],
+        "carousel_urls": carousel_urls,
+        "status": "design_ready",
+        "human_approved": False,
+        "source_type": source_type,
+        "content_type": "feed",
+    }
+    inserted = db.insert("content_ideas", row)
+    print(f"  inserted id={inserted['id']}")
+
+    print(f"[4/4] Slack notify_design_ready 발송...")
+    notify_design_ready(
+        client_name=client_slug,
+        ideas=[{
+            "id": idea_uuid,
+            "hook": cover_headline,
+            "design_url": carousel_urls[0],
+            "carousel_urls": carousel_urls,
+            "content_type": "feed",
+            "hashtags": cap["hashtags"],
+        }],
+        webhook_url=slack_webhook,
+    )
+    print(f"\n[OK] 인스타 게시 흐름 등록 완료. idea_id={idea_uuid}")
+    print(f"     슬랙 카드 → 최종 승인 클릭 → publisher 즉시 게시")
+    return idea_uuid
+
+
 def _parse_args():
     p = argparse.ArgumentParser(description="gpt-image 기반 8장 카드뉴스 생성")
     p.add_argument("--first-only", action="store_true", help="cover 1장만 (검증용)")
@@ -225,11 +378,21 @@ def _parse_args():
                    help="기본 gpt-image-2 (2026-04 출시 최신, 추론 통합 한글 정확도 ↑). 1.5/1로 fallback 가능")
     p.add_argument("--quality", default="medium", choices=["low", "medium", "high"])
     p.add_argument("--round", dest="round_id", default=None)
+    p.add_argument("--to-pipeline", action="store_true",
+                   help="기존 round 폴더 합격본 → content_ideas + Storage + Slack")
+    p.add_argument("--client", default="fit_ai_founder",
+                   help="--to-pipeline 사용 시 clients.slug")
     return p.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_args()
+    if args.to_pipeline:
+        if not args.round_id:
+            print("[err] --to-pipeline 사용 시 --round <id> 필수", file=sys.stderr)
+            sys.exit(1)
+        save_to_pipeline(client_slug=args.client, round_id=args.round_id)
+        sys.exit(0)
     sys.exit(0 if main(
         only_first=args.first_only,
         model=args.model,
