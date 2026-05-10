@@ -43,11 +43,10 @@ from src.utils.ig_token import refresh_all_active as ig_token_refresh_all
 
 KST_OFFSET = 9  # UTC+9
 
-# 2026-05-08: 카드뉴스 자동화 활성 클라이언트 화이트리스트.
-# planb_pm은 사용자가 손으로 개선해서 게시 (양산 일시 정지).
-# 추가 제거: 환경변수 CARDNEWS_ACTIVE_CLIENTS="fit_ai_founder,planb_pm" 식으로 오버라이드 가능.
+# 2026-05-11: 카드뉴스 자동 양산 폐기 — 차원 B 결정 (1차 데이터 인간 + 양산 자동화).
+# 디폴트 OFF. 부활 시 Railway env CARDNEWS_ACTIVE_CLIENTS="fit_ai_founder,..." 로 명시.
 _CARDNEWS_ACTIVE_CLIENTS = [
-    s.strip() for s in os.environ.get("CARDNEWS_ACTIVE_CLIENTS", "fit_ai_founder").split(",")
+    s.strip() for s in os.environ.get("CARDNEWS_ACTIVE_CLIENTS", "").split(",")
     if s.strip()
 ]
 
@@ -323,8 +322,7 @@ def main() -> None:
     token_refresh_utc = _utc_hour_for_kst(9)  # 09:00 KST = 00:00 UTC
 
     topic_proposal_utc = _utc_hour_for_kst(7)  # 07:00 KST = 22:00 UTC (전날) — 1% 게이트 5후보
-    # 2026-05-08: 카드뉴스 자동화 화이트리스트 — _CARDNEWS_ACTIVE_CLIENTS만 처리.
-    # planb_pm은 양산 일시 정지 (사용자가 손으로 개선해서 게시).
+    # 2026-05-11: 카드뉴스 자동 양산 디폴트 OFF. _CARDNEWS_ACTIVE_CLIENTS 비어있으면 카드뉴스 5잡 모두 no-op.
     schedule.every().day.at(f"{topic_proposal_utc:02d}:00").do(topic_proposal_job)
     schedule.every(10).minutes.do(topic_selected_poll_job)
     schedule.every().day.at(f"{daily_utc:02d}:00").do(daily_job)
@@ -336,8 +334,10 @@ def main() -> None:
     schedule.every().sunday.at(f"{weekly_report_utc_hour:02d}:00").do(weekly_report_job)
     schedule.every().monday.at(f"{token_refresh_utc:02d}:00").do(token_refresh_job)
 
-    print(f"[Cron] 🎯 카드뉴스 자동화 활성 클라이언트: {_CARDNEWS_ACTIVE_CLIENTS}")
-    print("[Cron] ⏸ 카드뉴스 일시 정지 클라이언트: planb_pm (사용자 손 개선 모드)")
+    if _CARDNEWS_ACTIVE_CLIENTS:
+        print(f"[Cron] 🎯 카드뉴스 자동화 활성 클라이언트: {_CARDNEWS_ACTIVE_CLIENTS}")
+    else:
+        print("[Cron] ⏸ 카드뉴스 자동 양산 OFF (디폴트) — 카드뉴스 5잡 모두 no-op. 부활: env CARDNEWS_ACTIVE_CLIENTS 명시")
     print(f"[Cron] topic_proposal — 매일 {topic_proposal_utc:02d}:00 UTC (= KST 07:00) 5신호 후보 제안")
     print("[Cron] topic_selected_poll — 10분 간격")
     print(f"[Cron] daily_job — 매일 {daily_utc:02d}:00 UTC (= KST 09:00)")
