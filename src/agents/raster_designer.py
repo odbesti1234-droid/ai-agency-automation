@@ -854,7 +854,7 @@ def run_full(
 
     # 5. save_to_pipeline (Storage + DB + Slack) — skip_pipeline 가드
     if skip_pipeline:
-        print(f"\n[skip-pipeline] round_dir={round_dir.name} — Storage·DB·Slack 스킵 (dogfooding 모드)")
+        print(f"\n[skip-pipeline] round_dir={output_dir.name} — Storage·DB·Slack 스킵 (dogfooding 모드)")
         return None
     idea_id = save_to_pipeline(client_slug=client_slug, round_id=round_id)
     return idea_id
