@@ -1,0 +1,101 @@
+{
+  "topic_angle": "학사경고 받던 내가 AI 5개 활용해서 A+ 받은 5가지 비결",
+  "essence_5": [
+    "각 AI(Gemini/ChatGPT/Claude/NotebookLM)에 지침으로 나·과제·전공 컨텍스트 학습시키고 모든 질문·과제에 활용",
+    "수업 중 Gemini Live로 강의 실시간 받아쓰기. 9시 1교시 졸려도 시험기간 백지 안 됨, 폰만 책상 위에 켜두고 끝",
+    "시험 D-3 NotebookLM으로 족보 없이 객관식 20 + 서술형 5 예상문제 자동 생성, 음성 오버뷰로 등하굣길 팟캐스트 청취",
+    "수강신청 5분 전 ChatGPT가 강의평 50개 분석해 학점 폭망 강의 골라냄, 학기 시작 전 출발선 0.5~1.0점 차이",
+    "AI 답변 판별·검증 능력 자체를 키우는 게 진짜 꿀팁. 모두가 AI 쓰는 시대 결과물 골라내는 능력이 본질 차별성"
+  ],
+  "visual_tone_input": null,
+  "visual_mode": "movie_poster",
+  "accent_color": "#1A1A2E",
+  "rationale": "recent_modes=portrait, recent_colors=#FFEB3B 회피. 학사경고→A+ 반전 서사는 영화 포스터 톤이 가장 강하게 후킹. 학생·공부 토픽 매핑 다크블루(#1A1A2E) + 골드(#FFB800) 보조 액센트로 야간 도서관·새벽 공부방의 시네마틱 무드 통일.",
+  "slides": [
+    {
+      "n": 1,
+      "role": "cover",
+      "headline": "학사경고에서 A+ 5가지",
+      "highlight": "5가지",
+      "subtext": "AI 5개로 뒤집은 한 학기",
+      "label": "AI 학습 실증",
+      "prompt": "Slide 1 message: 학사경고 받던 학생이 AI 5개로 A+로 반전 → visual metaphor: 어두운 새벽 책상 위 형광등 하나만 켜진 노트북 화면, 화면 안에 숫자 \"A+\"가 골드 글로우로 빛나고, 책상 옆에 찢어진 학사경고 통지서가 흐릿하게 스러지듯 모션블러 처리. cinematic movie poster style, 1024x1024 square. Setting: a Korean university dorm desk at 4am, deep navy darkness #1A1A2E filling the room, single warm desk lamp creating a tight pool of golden light on the laptop. Korean college textbooks stacked on the right (전공서적 스타일, no readable foreign brand logos), a coffee mug with steam rising, eraser dust on the desk for realism. The laptop screen glows with a large bold golden \"A+\" character treated like a movie title. Lighting: dramatic chiaroscuro, single source warm tungsten light from upper-left at low angle, deep shadow falling to the right, golden rim light on the laptop edge, soft volumetric haze in the background. Camera angle: low eye-level three-quarter shot of the desk, focal length 35mm equivalent, shallow depth of field f/1.8, slight dutch tilt 3 degrees for tension. Composition: rule of thirds with laptop on left third and golden \"A+\" anchored at intersection, leading lines from desk edge converging toward the screen, generous negative space in upper background for headline text. Mood: dramatic, cinematic comeback story, hopeful tension. Color palette: dominant deep navy #1A1A2E, accent gold #FFB800 from screen and lamp, warm cream highlights, no yellow #FFEB3B. Add bold large hangul headline text \"학사경고에서 A+ 5가지\" rendered in heavy Pretendard Black style across upper half, color near-white with the word \"5가지\" highlighted in gold #FFB800. Place hangul subtext \"AI 5개로 뒤집은 한 학기\" smaller below in light gray. Add small rounded pill label in upper-left containing hangul text \"AI 학습 실증\" in white on dark pill background. No human face, no generic portrait. Korean university context. No external brand watermarks, no foreign account handles. Photorealistic cinematic still, ultra-detailed, sharp focus on laptop screen, depth-of-field bokeh on background.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 2,
+      "role": "insight_1",
+      "headline": "AI에게 나를 학습시킨다",
+      "highlight": "나를",
+      "subtext": "지침에 전공·과제·맥락 입력",
+      "label": "비결 1 컨텍스트",
+      "prompt": "Slide 2 message: Gemini·ChatGPT·Claude·NotebookLM 각각에 나의 전공·과제·맥락을 시스템 지침으로 학습시켜 모든 질문에 활용 → visual metaphor: 4개의 AI 챗봇 인터페이스 카드가 부채꼴로 펼쳐져 한 학생의 그림자 실루엣 책상 위로 빛을 쏘아주는 구도, 각 카드 위에 \"나의 컨텍스트\" 데이터가 빛 줄기로 흘러들어감. cinematic movie poster style, 1024x1024 square. Setting: dark study desk at night, four floating semi-transparent chat interface panels arranged like a fan, each panel showing abstract chat bubble shapes (no readable English text, no real brand logos copied) labeled in small hangul on top: \"제미나이\", \"챗지피티\", \"클로드\", \"노트북LM\". A glowing golden data stream representing personal context flows from a stack of textbooks and a notebook on the desk into all four panels simultaneously. Lighting: cool blue ambient #1A1A2E base with warm golden #FFB800 data-stream glow, dramatic backlight from the floating panels casting long shadows toward camera. Camera angle: low angle hero shot looking up at the four floating panels, slight wide lens distortion 28mm. Composition: symmetric radial composition with desk as anchor base and four panels fanning upward, leading lines converging from notebook to panels. Mood: empowering, almost mythical knowledge transfer, dramatic. Color palette: deep navy #1A1A2E dominant, gold #FFB800 accent on data streams, soft cyan reflections on glass panels. Add bold hangul headline text \"AI에게 나를 학습시킨다\" upper-third in heavy white sans-serif, with the word \"나를\" highlighted gold #FFB800. Subtext \"지침에 전공·과제·맥락 입력\" smaller below in light gray. Upper-left pill label hangul \"비결 1 컨텍스트\" white on dark pill. No human face visible, only suggested silhouette of hands at the desk edge. Korean university student context, real notebook with Korean handwriting blurred. No external watermarks. Photorealistic cinematic, depth, fine particle dust in golden light beams.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 3,
+      "role": "insight_2",
+      "headline": "1교시 졸아도 백지 안 됨",
+      "highlight": "졸아도",
+      "subtext": "Gemini Live가 받아쓴다",
+      "label": "비결 2 실시간 받아쓰기",
+      "prompt": "Slide 3 message: 9시 1교시 강의에서 졸려도 책상 위에 켜둔 폰으로 Gemini Live가 강의 전체를 실시간 받아쓰기, 시험기간 백지 사태 방지 → visual metaphor: 강의실 책상 위 세워둔 스마트폰 한 대가 교수의 목소리를 실시간 자막 텍스트로 변환해 빛 기둥처럼 위로 쏘아 올리고, 책상 위 펜은 멈춰 있고 학생의 팔꿈치가 옆에 늘어져 졸고 있는 듯한 구도. cinematic movie poster style, 1024x1024 square. Setting: Korean university lecture hall at morning 9am, soft cool window daylight from the left side, rows of empty wooden desks blurred in background bokeh. Foreground: a smartphone propped vertically on a desk via a small stand, the phone screen showing a flowing waveform and abstract transcript lines (Gemini Live style, no real brand logo, generic clean voice-recording UI). A column of glowing golden text particles rises from the phone like steam, suggesting captured speech. Beside the phone, a closed Korean notebook with a pen lying still, and a relaxed sleeve of a student's arm with elbow on desk barely visible (no face). Lighting: soft daylight from window left, mixed with golden phone-screen glow, dim cinematic ambient #1A1A2E in deeper background, slight haze. Camera angle: low close-up eye-level on the desk surface, 50mm focal length, shallow DOF with phone in razor-sharp focus and lecture hall background dissolved into bokeh. Composition: rule of thirds with phone at left intersection, rising text particles forming a vertical leading line, negative space in upper-right for headline. Mood: ironic relief, calm contrast between drowsy student and diligent AI. Color palette: deep navy #1A1A2E shadow, gold #FFB800 on text particles, soft cool window light, no fluorescent yellow. Add bold hangul headline text \"1교시 졸아도 백지 안 됨\" upper-right area, heavy white Pretendard Black style, the word \"졸아도\" highlighted gold #FFB800. Subtext \"Gemini Live가 받아쓴다\" smaller light gray. Upper-left rounded pill label hangul \"비결 2 실시간 받아쓰기\" white on dark pill. No clear human face, only suggested arm. Korean lecture hall context. No external watermarks or other account handles. Photorealistic cinematic still.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 4,
+      "role": "insight_3",
+      "headline": "족보 없이 예상문제 25개",
+      "highlight": "25개",
+      "subtext": "NotebookLM이 자동 생성",
+      "label": "비결 3 D-3 시험준비",
+      "prompt": "Slide 4 message: 시험 D-3에 NotebookLM에 강의자료 업로드해 객관식 20 + 서술형 5 예상문제 자동 생성, 음성 오버뷰로 등하굣길 팟캐스트처럼 청취 → visual metaphor: 한 권의 두꺼운 전공책에서 25개의 종이 문제 카드가 하늘로 날아오르며 그 옆에 이어폰 한 쌍이 놓여 있고, 카드들이 음파처럼 동심원 형태로 퍼지는 구도. cinematic movie poster style, 1024x1024 square. Setting: a wooden study desk in a Korean cafe at evening, a thick Korean university textbook open in the center, 25 small index card shapes lifting off the pages and floating upward in a spiral, each card faintly showing dummy multiple-choice circles (○) and short-answer underlines (no readable text content, abstract). Next to the textbook lie a pair of white earphones and a smartphone showing a podcast-style waveform with a play button. Around the floating cards, faint concentric sound-wave rings expand outward. Lighting: warm cafe golden hour glow from upper-right window, deep navy #1A1A2E shadow on left, dramatic backlight on the rising cards creating glowing edges, gold #FFB800 rim light. Camera angle: overhead three-quarter top-down 60-degree tilt, 35mm wide, sharp focus on textbook center. Composition: centered radial composition, textbook as anchor, cards spiraling upward forming a vortex leading line, earphones at lower-left third intersection. Mood: focused exam-prep urgency mixed with relief, magical academic energy. Color palette: deep navy #1A1A2E dominant, gold #FFB800 highlights on card edges and waveform, warm cream paper tones, no fluorescent yellow. Add bold hangul headline text \"족보 없이 예상문제 25개\" upper area heavy white Pretendard Black, the number \"25개\" highlighted in gold #FFB800 and slightly larger. Subtext \"NotebookLM이 자동 생성\" smaller in light gray below. Upper-left rounded pill label hangul \"비결 3 D-3 시험준비\" white on dark pill. No human face, no portrait. Korean university exam context, Korean textbook visual cues. No external account handles or watermarks. Photorealistic cinematic still with paper-edge detail and soft golden particles.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 5,
+      "role": "insight_4",
+      "headline": "수강신청 5분 전 폭망강의 거른다",
+      "highlight": "5분 전",
+      "subtext": "ChatGPT가 강의평 50개 분석",
+      "label": "비결 4 출발선 차이",
+      "prompt": "Slide 5 message: 수강신청 5분 전 ChatGPT에 강의평 50개를 던져 학점 폭망 강의를 골라내 학기 시작 전부터 평점 0.5~1.0점 출발선 차이 만들기 → visual metaphor: 디지털 시계가 \"00:04:59\"에서 카운트다운, 그 옆에 50개의 강의평 텍스트 블록이 폭포처럼 떨어져 들어가고 한쪽 면에서 빨간 X 표시된 강의들과 초록 체크 표시된 강의들이 분류되어 나오는 구도. cinematic movie poster style, 1024x1024 square. Setting: a dark study desk just before 수강신청 (Korean university course registration), a laptop screen showing a stylized split-screen: left side a stream of falling small text blocks representing 50 course reviews (abstract Korean character shapes, not readable), right side a sorted output list with green check marks ✓ on safe courses and red X marks on dangerous courses. Above the laptop a large floating digital countdown timer displaying \"00:04:59\" in glowing gold numerals. A coffee cup steaming on the side, a paper printout of a course timetable with some rows circled in red pen. Lighting: cool deep navy #1A1A2E ambient, dramatic gold #FFB800 glow from the countdown timer casting top-down light, neon green and red accent rim lights from the laptop screen reflecting on the desk. Camera angle: slight low angle frontal, 35mm, the laptop and timer dominating the frame, sharp focus throughout. Composition: centered symmetric with timer as upper anchor and laptop as lower anchor, vertical leading line, balanced left-right split inside screen. Mood: urgent countdown tension, decisive sorting clarity. Color palette: navy #1A1A2E dominant, gold #FFB800 timer accent, muted green and red as functional indicators only, no fluorescent yellow. Add bold hangul headline text \"수강신청 5분 전 폭망강의 거른다\" upper area heavy white Pretendard Black, two-line wrap acceptable, the phrase \"5분 전\" highlighted gold #FFB800. Subtext \"ChatGPT가 강의평 50개 분석\" smaller light gray. Upper-left pill label hangul \"비결 4 출발선 차이\" white on dark pill. No human face. Korean course-registration context. No external account handles. Photorealistic cinematic still, sharp text-block detail, atmospheric haze.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 6,
+      "role": "insight_5",
+      "headline": "검증 능력이 진짜 차별성",
+      "highlight": "검증",
+      "subtext": "AI 답을 골라내는 눈",
+      "label": "비결 5 본질 차별성",
+      "prompt": "Slide 6 message: 모두가 AI 쓰는 시대 결과물 골라내는 검증 능력이 본질 차별성 → visual metaphor: 두 갈래로 갈라진 길 끝에 똑같이 생긴 AI 답변 카드 5장이 떠 있고, 그 중 진짜 정답 1장만 골드로 빛나며 손 한 짝이 그 카드를 핀셋으로 집어내는 구도, 나머지 4장은 어둡게 가라앉음. cinematic movie poster style, 1024x1024 square. Setting: an abstract dark stage with deep navy #1A1A2E background and faint volumetric haze. Five identical-looking floating answer cards arranged in a horizontal row at chest height, all blank-looking with subtle dummy text lines (not readable). The middle one (or off-center) glows with intense gold #FFB800 inner light. A human hand from the right side holds a precision tweezers/pincers reaching toward the glowing card, only hand and forearm visible (no face). The other four cards are dimmed, slightly tilted as if discarded. Faint reflective floor surface beneath cards. Lighting: dramatic backlight on the glowing card creating a halo, top-down rim light on the hand, deep shadow on dimmed cards, single golden spotlight effect. Camera angle: eye-level medium close-up of the row of cards, slight 5-degree dutch tilt, 50mm, shallow DOF on the glowing card. Composition: rule of thirds with glowing card at right-third intersection, four dimmed cards forming a leading line into it, hand entering from right edge, generous negative space upper-left for headline. Mood: discerning, deliberate, almost detective-like clarity, mature confidence. Color palette: navy #1A1A2E dominant, gold #FFB800 single accent on chosen card, no other saturated colors. Add bold hangul headline text \"검증 능력이 진짜 차별성\" upper-left area heavy white Pretendard Black, the word \"검증\" highlighted gold #FFB800. Subtext \"AI 답을 골라내는 눈\" smaller light gray. Upper-left pill label hangul \"비결 5 본질 차별성\" white on dark pill. No human face, only hand. Korean modern minimal context, abstract. No external account handles. Photorealistic cinematic still, fine dust particles in spotlight, glass-like card edges.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 7,
+      "role": "case",
+      "headline": "F에서 A+ 한 학기 성적표",
+      "highlight": "A+",
+      "subtext": "실제로 뒤집힌 결과",
+      "label": "실증 데이터",
+      "prompt": "Slide 7 message: 학사경고 학점에서 A+로 반전된 한 학기 실제 성적표 시각화 → visual metaphor: 두 장의 성적표가 위아래로 겹쳐 있고, 위쪽 옛 성적표는 빨간 \"F\"·\"D\" 글자가 흐릿하게 사라지고, 아래쪽 새 성적표는 골드 \"A+\" 행렬이 또렷하게 떠오르는 구도, 옆에는 상승 곡선 그래프. cinematic movie poster style, 1024x1024 square. Setting: a clean Korean university transcript document presented as a hero object on a dark navy desk surface. The transcript shows 5 course rows in a vertical list, each row with a Korean course name (abstract hangul shapes, generic 전공명, not readable specific) and a grade column. Top of the document a faded watermark \"이전 학기\" with grades \"F, D, F, D, C\" rendered in dim red and partially dissolving into smoke particles. Bottom half labeled \"이번 학기\" with grades \"A+, A+, A+, A, A+\" rendered in crisp glowing gold #FFB800. To the right of the transcript, a small infographic line chart rising sharply from lower-left to upper-right, with grid lines, axis ticks, and a single golden line. Lighting: top-down soft cinematic spotlight on the transcript, deep shadows around the edges, gold rim light on the new grades, smoke wisp lighting on the old grades. Camera angle: overhead 45-degree tilt looking down at the desk, 35mm, sharp focus on transcript. Composition: centered symmetric with transcript as anchor, chart on right third, smoke leading lines from old grades fading upward, negative space at top. Mood: vindication, quiet triumph, evidence-based confidence. Color palette: deep navy #1A1A2E dominant, gold #FFB800 on new grades and chart line, muted red as accent on dissolving old grades, off-white paper. Add bold hangul headline text \"F에서 A+ 한 학기 성적표\" upper area heavy white Pretendard Black, \"A+\" highlighted gold #FFB800 and slightly enlarged. Subtext \"실제로 뒤집힌 결과\" smaller light gray. Upper-left pill label hangul \"실증 데이터\" white on dark pill. No human face. Korean university transcript context with hangul column headers like \"과목\", \"학점\", \"성적\" visible (these short hangul words must render correctly). No external account handles. Photorealistic cinematic still with paper texture and gold ink reflection.",
+      "subtext_repeat_for_label_check": "ignore"
+    },
+    {
+      "n": 8,
+      "role": "cta",
+      "headline": "이번 학기 너도 A+ 가자",
+      "highlight": "A+",
+      "subtext": "저장하고 시험기간에 다시 봐",
+      "label": "저장 · 공유",
+      "prompt": "Slide 8 message: 저장하고 다음 시험기간에 다시 봐, 친구에게 공유 → visual metaphor: 어두운 공간에 떠 있는 한 장의 카드가 북마크 리본과 공유 화살표 아이콘으로 감싸져 있고, 카드 안에는 골드 \"A+\" 글자, 아래로 손가락 하나가 \"저장\" 버튼을 누르려는 듯 다가오는 구도. cinematic movie poster style, 1024x1024 square. Setting: a dark stage with deep navy #1A1A2E background and soft volumetric haze. Centered: a single floating glass-like card showing a large golden \"A+\" emblem with a thin gold border, a bookmark ribbon hanging from its top-right corner, and a circular share-arrow icon orbiting the card. Below the card a single index finger from a hand approaches from below toward an implied save button, only finger and partial hand visible (no face, no full body). Subtle light particles floating around. Lighting: dramatic single key light from upper-front on the card, golden rim glow on \"A+\" emblem, soft fill on the finger, deep shadow background. Camera angle: eye-level frontal hero shot, 50mm, card centered and slightly tilted 8 degrees, shallow DOF with finger softly out of focus. Composition: centered symmetric with card as hero, vertical leading line from finger up to card to bookmark, generous negative space top and sides for headline and CTA. Mood: invitational, warm closure, action-prompting confidence. Color palette: deep navy #1A1A2E dominant, gold #FFB800 single accent on A+ and ribbon, soft warm cream highlights, no fluorescent yellow. Add bold hangul headline text \"이번 학기 너도 A+ 가자\" upper area heavy white Pretendard Black, \"A+\" highlighted gold #FFB800 enlarged. Subtext \"저장하고 시험기간에 다시 봐\" smaller in light gray below. Upper-left rounded pill label hangul \"저장 · 공유\" white on dark pill. Add a small subtle gold call-to-action hint near the card with hangul micro-text \"꾹 눌러 저장\" in tiny size near the finger. No human face, only finger. Korean student context. No external account handles or watermarks. Photorealistic cinematic still, glass card refraction, gold particle bokeh.",
+      "subtext_repeat_for_label_check": "ignore"
+    }
+  ],
+  "client_slug": "fit_ai_founder",
+  "model": "gpt-image-2",
+  "quality": "medium",
+  "round_id": "20260511_015640",
+  "generated_at": "2026-05-10T16:56:40.079799+00:00"
+}

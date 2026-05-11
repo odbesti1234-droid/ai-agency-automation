@@ -32,3 +32,8 @@ Thumbs.db
 
 # Railway
 railway.env
+
+# Cardnews dogfooding rounds — 구버전 산출물 (v0.1.1 이전) git 추적 제외
+docs/cardnews-raster/round_20260509_124248/
+docs/cardnews-raster/round_20260509_135703/
+docs/cardnews-raster/round_20260510_014906/
