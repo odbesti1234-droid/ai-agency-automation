@@ -121,6 +121,218 @@ _PROMPT_TOOL = {
 }
 
 
+# ============================================================================
+# Copy 엔지니어 (Sonnet 4.6) — 8장 headline·subtext·label·highlight (v0.3.0 신설)
+# ============================================================================
+
+_COPY_TOOL = {
+    "name": "submit_cardnews_copy",
+    "description": "8장 카드뉴스 headline·highlight·subtext·label 제출 (visual prompt 별도)",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "slides": {
+                "type": "array",
+                "minItems": 8,
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "n": {"type": "integer", "minimum": 1, "maximum": 8},
+                        "role": {"type": "string", "description": "cover / insight_1~5 / case / cta"},
+                        "headline": {"type": "string", "description": "15~25자 친근 정보형 한글. 5초 이해 룰 + 누가·무엇·이득 트리오."},
+                        "highlight": {"type": "string", "description": "1~3음절 강조 단어."},
+                        "subtext": {"type": "string", "description": "18~28자 보조 카피 친근체."},
+                        "label": {"type": "string", "description": "8~14자 좌상단 라벨 (비결 N · 카테고리)."},
+                    },
+                    "required": ["n", "role", "headline", "highlight", "subtext", "label"],
+                },
+            },
+        },
+        "required": ["slides"],
+    },
+}
+
+
+COPY_ENGINEER_SYSTEM = """<role>
+당신은 한국어 인스타그램 정보형 카드뉴스 헤드라인 카피라이터다.
+@fit_ai.founder (개인 브랜드, AI·자동화·수익화 콘텐츠) 전용.
+8장 카드뉴스의 headline·highlight·subtext·label만 작성한다. visual prompt는 다른 콜이 담당.
+nene_weekly 벤치마크 (30게시 1만+) 카피 패턴 추종이 본질.
+</role>
+
+<task>
+사용자가 제공한 (1) topic_angle (2) essence_5 (5팁) (3) brand_voice (4) recent_titles 다양성 가드 입력을 받아,
+8장의 headline + highlight + subtext + label 슬롯을 작성한다.
+출력은 반드시 `submit_cardnews_copy` tool 호출 한 번. 텍스트 응답 금지.
+
+8장 역할 구조:
+- slide 1: cover — 토픽 앵글 + 후킹
+- slide 2~6: insight 1~5 (5팁 각각 1장)
+- slide 7: case (실증·디테일·결과 숫자)
+- slide 8: CTA (저장·팔로우·DM 유도)
+</task>
+
+<context>
+## 클라이언트
+- 계정: @fit_ai.founder (개인 브랜드, 사용자 본인 운영)
+- 톤: 친근하되 전문적. "나도 따라할 수 있겠다" 실용형
+- 타겟: 20~30대 / AI·자동화·수익화에 관심 있는 직장인·학생·사이드잡
+- 핵심 키워드: AI 자동화·Claude·바이브코딩·꿀팁·시간절약·부업
+
+## 콘텐츠 필러
+- 필러 1: AI 꿀팁 (바이럴 쉬움)
+- 필러 2: 수익화 실증
+- 필러 3: 바이브코딩·툴 소개
+- 필러 4: 마인드셋·스토리
+
+## references (multimodal 4장 첨부)
+- nene_weekly_v0.2 4장 (`references/nene_weekly_v0.2/img_001~004.png`)
+- **본 콜은 nene 카피 패턴 추종이 본질. 시각 분석은 부차적 — 헤드라인 카피 구조·종결어미·구성·길이·도메인 맥락 박는 방식만 추출.**
+- nene 캡처 4장 헤드라인 사례 (참고):
+  * "(N회) 중간고사인 새내기 필독 — 제미나이로 3배 똑똑하게 시험문제 만드는 프롬프트.zip"
+  * "문제 만들기 전 가이드라인부터 제시할 때" (정보형 슬라이드)
+  * "[대학생활 꿀팁과 AI 활용법은? nene] / 팔로우하고 댓글로 가져주시면 프롬프트 DM 보내드려요" (CTA)
+</context>
+
+<headline_voice>
+## 종결어미 룰 (Hard)
+
+### 금지 (딱딱·강의식·AI 슬롭)
+- ❌ "~한다" / "~된다" / "~이다" (예: "AI마다 나를 먼저 학습시킨다")
+- ❌ "~하라" / "~해야 한다" (강요·교과서 톤)
+
+### 권장 (친근·실용·정보형)
+- ✅ **"~하기"** (명사형 종결, 가장 자연스러운 정보형 톤) — "AI마다 나·전공 먼저 학습시키기"
+- ✅ **"~하는 법"** (방법 명시형) — "족보 없을 때 예상문제 만드는 법"
+- ✅ **"~하자"** (권유형) — "이건 진짜 학기 시작 전에 박아두자"
+- ✅ **"~하면"** (조건형) — "이걸 박으면 답변 톤이 달라져요"
+- ✅ **"~해봐 / ~해보세요"** (제안형, CTA 정합)
+- ✅ 명사·체언 마무리 (예: "한 학기 학점 1.8→4.3 반등 — 도구 5개 12주 기록")
+
+## 한 게시물 안에서 다양화
+- 8장 모두 "~하기"만 = 단조롭다
+- 분배: "~하기" 4~5장 + "~하는 법" 1~2장 + "~하자/~해봐" 1~2장
+- cover(1) = 강한 후킹 (명사·체언 또는 결과 숫자 명시)
+- CTA(8) = 친근 제안형 ("~해봐 / 펴봐 / 써봐")
+
+## 톤 키워드 (subtext에도 적용)
+- 친근체: "~예요 / ~네요 / ~더라 / ~거든"
+- 단정체 회피: "~다 / ~이다 / ~된다"
+- 1·2인칭: "여러분" 금지 — "내가 / 너도 / 우리" 자연스럽게
+</headline_voice>
+
+<copy_principles>
+## 5초 이해 룰 (최우선)
+- 처음 보는 사람이 5초 안에 "누가·무엇·왜·이득" 파악 가능해야 함
+- 도메인 맥락(전공·시험·과제 등) 없는 사람도 이해 가능한 수준의 풀어쓰기
+
+### 압축 과다 금지 (★ AI 슬롭 핵심 원인)
+- ❌ "리포트 초안 Claude Project로 첨삭하기" — 누가? 무슨 첨삭? 왜? 무엇으로?
+- ✅ "리포트 초안, Claude한테 교수 시각으로 첨삭받기" — 누가(Claude) 무엇(교수 시각 첨삭) 명확
+- ✅ "교수님이 빨간 펜 들기 전에 Claude한테 미리 첨삭받는 법" — 시나리오·이득 명확
+
+### 누가·무엇·이득 트리오 (Hard)
+- 모든 헤드라인은 다음 3종 중 2종 이상 포함:
+  * **누가** (도구·주체): Claude / Gemini / NotebookLM / GPT 등 구체
+  * **무엇** (행동·결과): 예상문제 25개 자동 / 강의 받아쓰기 / 첨삭 2회
+  * **이득** (왜 좋은가): 시험 백지 방어 / 족보 없이 / 3배 똑똑 / 1.8→4.3 반등
+
+### 도메인 맥락 의무
+- "첨삭 2회 반복" → "교수님 시각으로 두 번 첨삭받기"
+- "예상문제 25개" → "족보 없을 때 NotebookLM이 예상문제 25개 뽑아주는 법"
+- "강의 받아쓰기" → "9시 1교시 졸려도 시험기간 백지 방어하는 받아쓰기"
+
+## nene 헤드라인 패턴 분석 (벤치마크)
+
+### 패턴 1: 도구 + 결과 숫자 + 형식 힌트
+- "**제미나이**로 **3배 똑똑하게 시험문제 만드는 프롬프트**.zip"
+- 구조: [도구명]로 [구체 이득·숫자] [무엇] [형식.zip]
+- 효과: 도구·이득·결과·실행 가능성 4종 한 줄
+
+### 패턴 2: 시리얼 라벨 + 타겟 + 필독성
+- "**(N회) 중간고사인 새내기 필독** — [본 내용]"
+- 구조: [(회차) 시즌] [타겟] [필독·꿀팁 단어]
+- 효과: 타겟 페르소나 즉시 호명 → 클릭
+
+### 패턴 3: 시나리오 + 방법
+- "[문제 만들기 전] 가이드라인부터 제시할 때"
+- 구조: [언제·어떤 상황] [무엇·해법]
+- 효과: 사용자가 자기 시나리오에 매핑 → 저장
+
+## 8장 카피 길이 가이드
+- headline: 15~25자 (한 줄에 보이게)
+- highlight: 1~3음절 (헤드라인 안에서 강조될 단어)
+- subtext: 18~28자 (헤드라인 보조 설명)
+- label: 8~14자 (좌상단 카테고리·번호 — "비결 1 · 컨텍스트 세팅" 같이)
+</copy_principles>
+
+<failure_modes>
+다음 패턴 검출 시 처음부터 다시:
+
+1. **압축 과다** — "첨삭 2회 반복" / "예상문제 25개 뽑기" 같이 도메인 맥락 없으면 의미 불명
+2. **AI 슬롭 어휘** — "혁신·프리미엄·최고·압도적·여러분·꼭 알아야·지금 바로·이것만 알면·~를 통해·~의 본질"
+3. **딱딱 종결어미** — "~한다 / ~된다 / ~이다" 1건 이상
+4. **누가·무엇·이득 부재** — 3종 중 1종만 있고 나머지 빠진 헤드라인
+5. **도메인 맥락 누락** — "Claude Project로 첨삭" → 누구 시각? 왜?
+6. **숫자 오기** — 5팁 토픽인데 cover "4가지 비결" 또는 "7개 방법"
+7. **단조로운 종결어미** — 8장 모두 "~하기" 또는 모두 "~는 법"만
+8. **타겟 호명 없음** — "대학생·복학생·1학년·새내기·시험기간" 같은 페르소나 단어 0건 (cover에 적어도 1개 권장)
+9. **브랜드 절대 금지어** — "어렵다·복잡하다·코딩 필수·전문가만 가능"
+10. **CTA 약함** — slide 8에 팔로우·저장·DM 중 1개 이상 명시 누락
+</failure_modes>
+
+<output_format>
+**반드시 `submit_cardnews_copy` tool 호출 1회. 텍스트 응답 금지.**
+
+```json
+{
+  "slides": [
+    {
+      "n": 1,
+      "role": "cover",
+      "headline": "<15~25자 한글>",
+      "highlight": "<1~3음절>",
+      "subtext": "<18~28자>",
+      "label": "<8~14자>"
+    },
+    ... (8장)
+  ]
+}
+```
+
+각 슬라이드 작성 시 5초 이해 룰 + 누가·무엇·이득 트리오 + 친근 종결어미 모두 통과.
+</output_format>
+
+<self_check>
+tool 호출 직전 자체 검증:
+
+- [ ] 8장 모두 5초 안 이해 가능 (도메인 외부인 검증)
+- [ ] 8장 모두 누가·무엇·이득 트리오 중 2종 이상
+- [ ] 친근 종결어미 100% (~한다/~된다/~이다 0건)
+- [ ] 8장 종결어미 다양화 (한 종류만 X)
+- [ ] AI 슬롭 어휘 0건
+- [ ] 브랜드 절대 금지어 0건
+- [ ] cover에 타겟 페르소나 호명 (대학생·복학생·새내기·시험기간 등)
+- [ ] 토픽 숫자(5팁이면 5)와 cover 숫자 일치
+- [ ] slide 8 CTA에 팔로우·저장·DM 중 2개 이상 명시
+- [ ] recent_titles 회피 (다양성 가드)
+
+모든 체크 통과 → submit_cardnews_copy 호출.
+실패 → 해당 슬라이드만 재작성 (max 2회). 그래도 실패 시 빈 응답 + 사용자에 어떤 체크가 막혔는지 보고.
+</self_check>
+
+<minimal_scope>
+이 콜의 책임은 8장 headline·highlight·subtext·label. visual prompt·image 생성·게시·시그니처는 일체 너의 영역 아님.
+"다음 단계로는...", "추가 추천...", "그 외 방법..." 같은 응답 확장 금지.
+</minimal_scope>
+
+<avoid_excessive_markdown>
+tool 호출만. tool 외 markdown·헤더·불릿 응답 금지.
+</avoid_excessive_markdown>
+"""
+
+
 PROMPT_ENGINEER_SYSTEM = """<role>
 당신은 한국어 인스타그램 카드뉴스 시각 디자이너 + gpt-image-2 prompt 엔지니어다.
 @fit_ai.founder (개인 브랜드, AI·자동화·수익화 콘텐츠) 전용 한 콜 prompt 엔지니어.
@@ -296,7 +508,12 @@ medium: smartphone candid · natural daylight · iPhone 15 default rendering ·
 </medium_specification>
 
 <headline_voice>
-**v0.2.1 신설 — 헤드라인·subtext 톤 룰 (정보형 카드뉴스 친근 표현)**
+**v0.3.0 변경 — 카피(headline·highlight·subtext·label)는 별도 에이전트(Sonnet 4.6)가 작성. user message로 `slides_copy` 입력 받으면 다음 룰 적용**:
+- `slides_copy` 입력 있으면 각 슬라이드의 headline·highlight·subtext·label은 그 카피 그대로 출력. **자유 작성 금지·수정 금지·재해석 금지.**
+- 각 슬라이드의 visual prompt 안 "한글 텍스트 슬롯" (예: `Display large hangul text "..."`)에 박는 한글도 `slides_copy.headline` 그대로 사용. 새 헤드라인 만들지 마.
+- `slides_copy` 미제공이면 (구버전 호환) 아래 v0.2.1 톤 룰을 직접 적용:
+
+**v0.2.1 — 헤드라인·subtext 톤 룰 (정보형 카드뉴스 친근 표현, 구버전 호환용)**
 
 ## 종결어미 룰 (Hard)
 
@@ -605,6 +822,91 @@ def _load_references(client_slug: str, max_count: int = 8) -> list[Path]:
     return paths[:max_count]
 
 
+def _engineer_copy(
+    topic_angle: str,
+    essence_5: list[str],
+    brand_voice: dict,
+    client_slug: str,
+) -> list[dict]:
+    """Sonnet 4.6 호출 → 8장 headline·subtext·label·highlight 생성 (카피 전문).
+
+    v0.3.0 신설 — visual prompt 콜과 분리. nene 카피 패턴 추종.
+    Returns: slides[8] (각 슬라이드 dict: n·role·headline·highlight·subtext·label)
+    """
+    import anthropic
+
+    anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    # nene 4장만 카피 references — ai_ainow는 시각 톤 참조라 카피엔 부적합
+    nene_dir = Path.home() / ".claude" / "clients" / client_slug / "references" / "nene_weekly_v0.2"
+    nene_refs: list[Path] = []
+    if nene_dir.exists():
+        nene_refs = sorted(
+            list(nene_dir.glob("*.png"))
+            + list(nene_dir.glob("*.jpg"))
+            + list(nene_dir.glob("*.jpeg"))
+        )[:4]
+
+    multimodal_blocks: list[dict] = []
+    for ref_path in nene_refs:
+        media_type = "image/png" if ref_path.suffix == ".png" else "image/jpeg"
+        multimodal_blocks.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64.b64encode(ref_path.read_bytes()).decode(),
+            },
+        })
+
+    bv_compact = {
+        "tone": brand_voice.get("tone"),
+        "positioning": brand_voice.get("positioning"),
+        "forbid_keywords": brand_voice.get("forbid_keywords", []),
+    }
+
+    user_text = f"""[토픽 angle]
+{topic_angle}
+
+[5개 본질 (5팁)]
+""" + "\n".join(f"{i+1}. {e}" for i, e in enumerate(essence_5)) + f"""
+
+[brand_voice]
+{json.dumps(bv_compact, ensure_ascii=False)}
+
+[references — nene_weekly 4장 첨부]
+{"(첨부됨, 카피 패턴 학습)" if multimodal_blocks else "(없음)"}
+
+8장 headline·subtext·label·highlight JSON 출력. 5초 이해 룰 + 친근 종결어미 + nene 카피 패턴 추종."""
+
+    user_content: list[dict] = []
+    if multimodal_blocks:
+        user_content.extend(multimodal_blocks)
+    user_content.append({"type": "text", "text": user_text})
+
+    print(f"[copy] Sonnet 4.6 호출 (nene refs {len(multimodal_blocks)}장)...")
+    resp = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4000,
+        system=[{"type": "text", "text": COPY_ENGINEER_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user_content}],
+        tools=[_COPY_TOOL],
+        tool_choice={"type": "tool", "name": "submit_cardnews_copy"},
+    )
+    tool_use_blocks = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
+    if not tool_use_blocks:
+        raise RuntimeError(f"copy 엔지니어가 tool_use 미사용. content={resp.content}")
+    parsed = tool_use_blocks[0].input
+
+    if len(parsed["slides"]) != 8:
+        raise RuntimeError(f"copy 슬라이드 8장 필요, 받음 {len(parsed['slides'])}장")
+
+    print(f"[copy] 8장 카피 완성:")
+    for s in parsed["slides"]:
+        print(f"  {s['n']}/{s['role']}: \"{s['headline']}\"")
+    return parsed["slides"]
+
+
 def _engineer_prompts(
     topic_angle: str,
     essence_5: list[str],
@@ -612,9 +914,11 @@ def _engineer_prompts(
     brand_voice: dict,
     client_id: str,
     client_slug: str,
+    slides_copy: list[dict] | None = None,
 ) -> dict:
-    """Sonnet 4.6 호출 → 8개 정밀 image prompt 생성.
+    """Opus 4.7 호출 → 8개 정밀 image prompt 생성.
 
+    v0.3.0: slides_copy 입력 시 headline·subtext·label은 카피 결과 그대로 사용.
     Returns: {visual_mode, accent_color, rationale, slides[8]}
     """
     import anthropic
@@ -669,7 +973,11 @@ def _engineer_prompts(
 [references — multimodal {len(multimodal_blocks)}장 첨부]
 {"(첨부됨, 다양성·임팩트 학습)" if multimodal_blocks else "(없음)"}
 
-8장 정밀 prompt JSON 출력. visual_mode 1개 통일, recent 회피, references 다양성 학습."""
+[slides_copy — v0.3.0 카피 에이전트 결과 (이미 결정됨, 수정 금지)]
+{json.dumps(slides_copy, ensure_ascii=False, indent=2) if slides_copy else "(미제공 — headline·subtext·label 자율 작성)"}
+
+8장 정밀 prompt JSON 출력. visual_mode 1개 통일, recent 회피, references 다양성 학습.
+slides_copy 입력이 있으면 각 슬라이드의 headline·highlight·subtext·label은 그 카피 그대로 출력. visual prompt 안 한글 텍스트 슬롯도 그 헤드라인 그대로 박음."""
 
     user_content: list[dict] = []
     if multimodal_blocks:
@@ -697,6 +1005,19 @@ def _engineer_prompts(
 
     print(f"[engineer] visual_mode={parsed['visual_mode']} accent={parsed['accent_color']}")
     print(f"[engineer] rationale: {parsed.get('rationale', '')[:120]}")
+
+    # v0.3.0: slides_copy 입력 있으면 headline·highlight·subtext·label 강제 덮어쓰기 (Opus가 어긋나게 출력해도 보장)
+    if slides_copy:
+        copy_by_n = {s["n"]: s for s in slides_copy}
+        for slide in parsed["slides"]:
+            c = copy_by_n.get(slide["n"])
+            if c:
+                slide["headline"] = c["headline"]
+                slide["highlight"] = c["highlight"]
+                slide["subtext"] = c["subtext"]
+                slide["label"] = c["label"]
+        print(f"[engineer] copy slots 8장 덮어쓰기 완료 (Sonnet 4.6 카피 → Opus 4.7 출력)")
+
     return parsed
 
 
@@ -790,7 +1111,15 @@ def run_full(
     client_id = client_row["id"]
     brand_voice = client_row.get("brand_voice") or {}
 
-    # 2. prompt 엔지니어 — 8개 정밀 prompt 생성
+    # 2a. (v0.3.0) Sonnet 4.6 카피 에이전트 — 8장 headline·subtext·label 먼저
+    slides_copy = _engineer_copy(
+        topic_angle=topic_angle,
+        essence_5=essence_5,
+        brand_voice=brand_voice,
+        client_slug=client_slug,
+    )
+
+    # 2b. Opus 4.7 visual prompt 엔지니어 — 8개 정밀 image prompt (카피는 위에서 결정됨)
     engineered = _engineer_prompts(
         topic_angle=topic_angle,
         essence_5=essence_5,
@@ -798,6 +1127,7 @@ def run_full(
         brand_voice=brand_voice,
         client_id=client_id,
         client_slug=client_slug,
+        slides_copy=slides_copy,
     )
 
     # 3. round_dir 생성 + slides.json 보존 (caption 생성·to-pipeline 호환)
