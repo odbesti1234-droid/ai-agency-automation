@@ -1302,6 +1302,221 @@ def _generate_caption_hashtags(metadata: dict, brand_voice: dict) -> dict:
     return {"caption": caption, "hashtags": hashtags}
 
 
+# ============================================================================
+# DM 가이드 노션 — 카드뉴스 미끼 보고 댓글·DM 단 사람에게 보낼 풀콘텐츠
+# ============================================================================
+
+_DM_GUIDE_SYSTEM = """당신은 인스타그램 카드뉴스에 댓글·DM 단 사람에게 보낼 가이드 본문을 작성한다.
+
+[입력] topic_angle + essence_5 (5개 비결 한 줄씩) + brand_voice
+[출력] 5개 비결 각각 800자 풀콘텐츠 JSON. 각 비결마다 카드뉴스에서 못 담은 깊이를 펼친다.
+
+[800자 본문 구조 (각 비결마다 강제)]
+1. 첫 줄(70자 내외): 핵심 한 줄 — 이게 왜 중요한지 결론부터
+2. 컨텍스트·왜 사람들이 이걸 못 하는지 (실수 한 줄 + 그 이유)
+3. 구체 단계 또는 예시 (실제 사용법, 화면·명령어·상황 디테일 1~2개)
+4. 흔한 함정 또는 결과 차이 (해보면 뭐가 달라지는지 숫자·체감)
+5. 마지막 한 줄: 바로 해볼 수 있는 액션 한 가지
+
+[톤]
+- fit_ai_founder 1인칭 작업공간, 직설·짧은 호흡
+- 23살 예비 사업가·AI 마케팅 독학 학생 페르소나 실경험 톤
+- 이모지 1~2개 허용 (강조용), 과한 기호 금지
+- "여러분", "꼭 알아야", "혁신", "프리미엄" 금지
+
+[금지]
+- 카드뉴스 본문 그대로 복붙 금지 (카드뉴스는 미끼·요약, 가이드는 풀콘텐츠)
+- 슬라이드 번호·시각 묘사 언급 금지 (가이드는 텍스트 only)
+- 일반론·교과서 톤 금지 — 구체·체감·실수 위주
+
+[출력 JSON]
+sections: 5개 (n=1~5, title=짧은 제목, body=정확히 700~900자 한글 풀콘텐츠)"""
+
+
+_DM_GUIDE_TOOL = {
+    "name": "submit_dm_guide",
+    "description": "5개 비결 풀콘텐츠 가이드 제출",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "sections": {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "n": {"type": "integer"},
+                        "title": {"type": "string", "description": "짧은 제목 (20자 내외)"},
+                        "body": {"type": "string", "description": "700~900자 한글 풀콘텐츠"},
+                    },
+                    "required": ["n", "title", "body"],
+                },
+            },
+        },
+        "required": ["sections"],
+    },
+}
+
+
+def _generate_dm_guide_sections(
+    topic_angle: str,
+    essence_5: list[str],
+    brand_voice: dict,
+) -> list[dict]:
+    """Sonnet 4.6 호출 → 5개 비결 각 800자 풀콘텐츠."""
+    import anthropic
+
+    anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    user_text = f"""[topic_angle]
+{topic_angle}
+
+[5개 비결 — 카드뉴스 슬라이드에서 한 줄씩만 다룸. 가이드에서 각각 800자 풀콘텐츠로 펼침]
+""" + "\n".join(f"{i+1}. {e}" for i, e in enumerate(essence_5)) + f"""
+
+[brand_voice]
+{json.dumps({k: brand_voice.get(k) for k in ("tone", "description", "positioning", "forbid_keywords")}, ensure_ascii=False)}
+
+5개 비결 각각 정확히 700~900자 한글 풀콘텐츠 JSON 출력."""
+
+    print(f"[dm-guide] Sonnet 4.6 호출 — 5개 비결 × 800자...")
+    resp = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=8000,
+        system=_DM_GUIDE_SYSTEM,
+        messages=[{"role": "user", "content": user_text}],
+        tools=[_DM_GUIDE_TOOL],
+        tool_choice={"type": "tool", "name": "submit_dm_guide"},
+    )
+    tool_use = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
+    if not tool_use:
+        raise RuntimeError(f"dm_guide tool_use 미사용. content={resp.content}")
+    sections = tool_use[0].input["sections"]
+    if len(sections) != 5:
+        raise RuntimeError(f"sections 5개 필요, 받음 {len(sections)}")
+
+    for s in sections:
+        body_len = len(s["body"])
+        print(f"  [{s['n']}] {s['title']} ({body_len}자)")
+    return sections
+
+
+def _create_dm_guide_notion(
+    topic_angle: str,
+    essence_5: list[str],
+    sections: list[dict],
+    caption: str,
+    hashtags: list[str],
+    idea_id: str,
+    client_name: str,
+) -> str | None:
+    """DM 가이드 본문 + 인스타 게시 패키지(캡션·해시태그) → 노션 페이지."""
+    import httpx as _httpx
+    token = os.environ.get("NOTION_TOKEN", "")
+    parent_id = os.environ.get("NOTION_PARENT_PAGE_ID", "")
+    if not token or not parent_id or "XXXX" in token:
+        print("[dm-guide] NOTION_TOKEN 미설정 — 노션 생성 스킵")
+        return None
+
+    title = f"[{client_name}] DM 가이드 — {topic_angle[:50]}"
+
+    def _para(text: str, bold: bool = False) -> dict:
+        rich = {"type": "text", "text": {"content": text}}
+        if bold:
+            rich["annotations"] = {"bold": True}
+        return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": [rich]}}
+
+    def _h2(text: str) -> dict:
+        return {"object": "block", "type": "heading_2", "heading_2": {
+            "rich_text": [{"type": "text", "text": {"content": text}}]
+        }}
+
+    def _h3(text: str) -> dict:
+        return {"object": "block", "type": "heading_3", "heading_3": {
+            "rich_text": [{"type": "text", "text": {"content": text}}]
+        }}
+
+    def _divider() -> dict:
+        return {"object": "block", "type": "divider", "divider": {}}
+
+    children: list[dict] = [
+        {"object": "block", "type": "callout", "callout": {
+            "rich_text": [{"type": "text", "text": {"content": f"💌 카드뉴스 댓글·DM 응답용 풀 가이드 — {client_name} | ID: {idea_id[:8]}"}}],
+            "icon": {"emoji": "💌"},
+            "color": "green_background",
+        }},
+        _h2(f"📌 {topic_angle}"),
+        _divider(),
+    ]
+
+    for s in sections:
+        children.append(_h3(f"{s['n']}. {s['title']}"))
+        body = s["body"]
+        for i in range(0, len(body), 1800):
+            children.append(_para(body[i:i+1800]))
+        children.append(_divider())
+
+    children.append(_h2("📱 인스타 게시 패키지 (참고)"))
+    children.append(_h3("캡션"))
+    cap_parts = [caption[i:i+1800] for i in range(0, min(len(caption), 5400), 1800)]
+    for part in cap_parts:
+        children.append(_para(part))
+    children.append(_h3("해시태그"))
+    children.append(_para(" ".join(f"#{t.lstrip('#')}" for t in hashtags[:30])))
+
+    payload = {
+        "parent": {"page_id": parent_id},
+        "properties": {"title": {"title": [{"type": "text", "text": {"content": title}}]}},
+        "children": children[:100],
+    }
+
+    try:
+        resp = _httpx.post(
+            "https://api.notion.com/v1/pages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+        if resp.status_code not in (200, 201):
+            print(f"[dm-guide] 노션 생성 실패: {resp.status_code} {resp.text[:200]}")
+            return None
+        page_id = resp.json().get("id", "").replace("-", "")
+        url = f"https://www.notion.so/{page_id}" if page_id else None
+        print(f"[dm-guide] 노션 페이지 생성 → {url}")
+        return url
+    except Exception as e:
+        print(f"[dm-guide] 노션 오류: {e}")
+        return None
+
+
+def _archive_notion_page(page_url: str) -> bool:
+    """노션 페이지 archive=true (Soft delete). 기존 잘못 만든 페이지 정리용."""
+    import httpx as _httpx
+    token = os.environ.get("NOTION_TOKEN", "")
+    if not token or not page_url:
+        return False
+    page_id = page_url.rstrip("/").split("/")[-1]
+    try:
+        resp = _httpx.patch(
+            f"https://api.notion.com/v1/pages/{page_id}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json",
+            },
+            json={"archived": True},
+            timeout=30,
+        )
+        return resp.status_code in (200, 201)
+    except Exception:
+        return False
+
+
 def save_to_pipeline(
     client_slug: str,
     round_id: str,
@@ -1349,27 +1564,23 @@ def save_to_pipeline(
         carousel_urls.append(url)
         print(f"  {path.name}")
 
-    print(f"[3/5] 노션 브리프 생성 (캡션·CTA·이미지 통합)...")
-    from src.agents.card_designer import _create_notion_brief
+    print(f"[3/5] DM 가이드 풀콘텐츠 + 노션 페이지...")
     cover = metadata["slides"][0]
     cover_headline = cover["headline"].replace(" / ", " ")
-    slide_script = [
-        {
-            "role": s["role"],
-            "headline": s["headline"],
-            "body": s.get("subtext", "") + (f" / 강조: {s.get('highlight','')}" if s.get("highlight") else ""),
-        }
-        for s in metadata["slides"]
-    ]
-    notion_url = _create_notion_brief({
-        "id": idea_uuid,
-        "hook": cover_headline,
-        "caption": cap["caption"],
-        "hashtags": cap["hashtags"],
-        "slide_script": slide_script,
-        "carousel_urls": carousel_urls,
-        "content_type": "feed",
-    }, client_slug)
+    guide_sections = _generate_dm_guide_sections(
+        topic_angle=metadata["topic_angle"],
+        essence_5=metadata["essence_5"],
+        brand_voice=brand_voice,
+    )
+    notion_url = _create_dm_guide_notion(
+        topic_angle=metadata["topic_angle"],
+        essence_5=metadata["essence_5"],
+        sections=guide_sections,
+        caption=cap["caption"],
+        hashtags=cap["hashtags"],
+        idea_id=idea_uuid,
+        client_name=client_slug,
+    )
     if notion_url:
         print(f"  -> {notion_url}")
     else:
