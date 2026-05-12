@@ -209,12 +209,33 @@ def notify_design_ready(
                 "text": {"type": "mrkdwn", "text": "슬라이드: " + "  |  ".join(link_parts)},
             })
 
+        # CTA 슬라이드 (raster pipeline에서 cta dict 넘기면 표시)
+        cta = idea.get("cta")
+        if cta and isinstance(cta, dict):
+            cta_text = f"*🎯 CTA 슬라이드*\n• {cta.get('headline','')}"
+            if cta.get("subtext"):
+                cta_text += f"\n• {cta['subtext']}"
+            if cta.get("label"):
+                cta_text += f"\n• 라벨: {cta['label']}"
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": cta_text},
+            })
+
+        # 캡션 풀텍스트 (raster pipeline에서 caption 넘기면 표시)
+        caption = idea.get("caption")
+        if caption:
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*📝 인스타 캡션 ({len(caption)}자)*\n```{caption[:2800]}```"},
+            })
+
         # Notion 브리프 링크
         notion_url = idea.get("notion_url")
         if notion_url:
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"📄 *Notion 브리프:* <{notion_url}|콘텐츠 문서 열기>"},
+                "text": {"type": "mrkdwn", "text": f"📄 *Notion 브리프 (캡션·CTA·이미지 통합):* <{notion_url}|콘텐츠 문서 열기>"},
             })
 
         # 승인/거부 버튼

@@ -1349,9 +1349,33 @@ def save_to_pipeline(
         carousel_urls.append(url)
         print(f"  {path.name}")
 
-    print(f"[3/4] content_ideas insert (status=design_ready)...")
+    print(f"[3/5] 노션 브리프 생성 (캡션·CTA·이미지 통합)...")
+    from src.agents.card_designer import _create_notion_brief
     cover = metadata["slides"][0]
     cover_headline = cover["headline"].replace(" / ", " ")
+    slide_script = [
+        {
+            "role": s["role"],
+            "headline": s["headline"],
+            "body": s.get("subtext", "") + (f" / 강조: {s.get('highlight','')}" if s.get("highlight") else ""),
+        }
+        for s in metadata["slides"]
+    ]
+    notion_url = _create_notion_brief({
+        "id": idea_uuid,
+        "hook": cover_headline,
+        "caption": cap["caption"],
+        "hashtags": cap["hashtags"],
+        "slide_script": slide_script,
+        "carousel_urls": carousel_urls,
+        "content_type": "feed",
+    }, client_slug)
+    if notion_url:
+        print(f"  -> {notion_url}")
+    else:
+        print(f"  -> 노션 생성 스킵 (NOTION_TOKEN 미설정)")
+
+    print(f"[4/5] content_ideas insert (status=design_ready)...")
     row = {
         "id": idea_uuid,
         "client_id": client_id,
@@ -1366,11 +1390,13 @@ def save_to_pipeline(
         "content_type": "feed",
         "visual_mode": metadata.get("visual_mode"),
         "accent_color": metadata.get("accent_color"),
+        "notion_url": notion_url,
     }
     inserted = db.insert("content_ideas", row)
     print(f"  inserted id={inserted['id']}")
 
-    print(f"[4/4] Slack notify_design_ready 발송...")
+    print(f"[5/5] Slack notify_design_ready 발송 (캡션+CTA+노션 포함)...")
+    cta_slide = next((s for s in metadata["slides"] if s["role"] == "cta"), metadata["slides"][-1])
     notify_design_ready(
         client_name=client_slug,
         ideas=[{
@@ -1380,6 +1406,13 @@ def save_to_pipeline(
             "carousel_urls": carousel_urls,
             "content_type": "feed",
             "hashtags": cap["hashtags"],
+            "caption": cap["caption"],
+            "notion_url": notion_url,
+            "cta": {
+                "headline": cta_slide["headline"],
+                "subtext": cta_slide.get("subtext", ""),
+                "label": cta_slide.get("label", ""),
+            },
         }],
         webhook_url=slack_webhook,
     )
