@@ -57,8 +57,6 @@ def main() -> None:
         topic_angle=metadata["topic_angle"],
         essence_5=metadata["essence_5"],
         sections=sections,
-        caption=row["caption"],
-        hashtags=row["hashtags"],
         idea_id=IDEA_ID,
         client_name=CLIENT_SLUG,
     )

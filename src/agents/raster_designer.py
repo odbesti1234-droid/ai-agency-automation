@@ -1406,12 +1406,10 @@ def _create_dm_guide_notion(
     topic_angle: str,
     essence_5: list[str],
     sections: list[dict],
-    caption: str,
-    hashtags: list[str],
     idea_id: str,
     client_name: str,
 ) -> str | None:
-    """DM 가이드 본문 + 인스타 게시 패키지(캡션·해시태그) → 노션 페이지."""
+    """DM 가이드 본문만 박힌 노션 페이지. 캡션·해시태그는 노션에 박지 않음 — 슬랙·DB only."""
     import httpx as _httpx
     token = os.environ.get("NOTION_TOKEN", "")
     parent_id = os.environ.get("NOTION_PARENT_PAGE_ID", "")
@@ -1457,13 +1455,7 @@ def _create_dm_guide_notion(
             children.append(_para(body[i:i+1800]))
         children.append(_divider())
 
-    children.append(_h2("📱 인스타 게시 패키지 (참고)"))
-    children.append(_h3("캡션"))
-    cap_parts = [caption[i:i+1800] for i in range(0, min(len(caption), 5400), 1800)]
-    for part in cap_parts:
-        children.append(_para(part))
-    children.append(_h3("해시태그"))
-    children.append(_para(" ".join(f"#{t.lstrip('#')}" for t in hashtags[:30])))
+    # 게시 패키지(캡션·해시태그)는 슬랙·DB에만 박음. 노션은 독자가 보는 가이드 본문 only.
 
     payload = {
         "parent": {"page_id": parent_id},
@@ -1576,8 +1568,6 @@ def save_to_pipeline(
         topic_angle=metadata["topic_angle"],
         essence_5=metadata["essence_5"],
         sections=guide_sections,
-        caption=cap["caption"],
-        hashtags=cap["hashtags"],
         idea_id=idea_uuid,
         client_name=client_slug,
     )
