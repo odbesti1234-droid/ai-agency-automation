@@ -915,10 +915,13 @@ def _engineer_prompts(
     client_id: str,
     client_slug: str,
     slides_copy: list[dict] | None = None,
+    visual_mode_lock: str | None = None,
+    accent_lock: str | None = None,
 ) -> dict:
     """Opus 4.7 호출 → 8개 정밀 image prompt 생성.
 
     v0.3.0: slides_copy 입력 시 headline·subtext·label은 카피 결과 그대로 사용.
+    visual_mode_lock / accent_lock: 사용자 명시 lock. 다양성 가드 무시하고 강제.
     Returns: {visual_mode, accent_color, rationale, slides[8]}
     """
     import anthropic
@@ -926,6 +929,11 @@ def _engineer_prompts(
     anthropic_client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
     recent_modes, recent_colors = _fetch_recent_modes(client_id, days=7)
+    # lock 옵션: 다양성 가드 override (사용자 명시)
+    if visual_mode_lock:
+        recent_modes = []
+    if accent_lock:
+        recent_colors = []
     manifest = _load_visual_tone_manifest(client_slug)
     refs = _load_references(client_slug, max_count=9)
 
@@ -949,12 +957,21 @@ def _engineer_prompts(
         "forbid_keywords": brand_voice.get("forbid_keywords", []),
     }
 
+    lock_block = ""
+    if visual_mode_lock or accent_lock:
+        lock_block = f"""
+[🔒 LOCK — 사용자 명시, 강제 준수 (다양성 가드 override)]
+- visual_mode: {visual_mode_lock or "(미지정 — 자유 선택)"}
+- accent_color: {accent_lock or "(미지정 — 자유 선택)"}
+※ 이 값으로 출력 의무. recent_modes·recent_colors 무시. 8장 전체 일관.
+"""
+
     user_text = f"""[토픽 angle]
 {topic_angle}
 
 [5개 본질]
 """ + "\n".join(f"{i+1}. {e}" for i, e in enumerate(essence_5)) + f"""
-
+{lock_block}
 [visual_tone — 사용자 명시]
 {visual_tone or "(미명시 — manifest 자동 매칭)"}
 
@@ -1002,6 +1019,14 @@ slides_copy 입력이 있으면 각 슬라이드의 headline·highlight·subtext
         raise RuntimeError(f"visual_mode 풀 외: {parsed['visual_mode']}")
     if len(parsed["slides"]) != 8:
         raise RuntimeError(f"슬라이드 8장 필요, 받음 {len(parsed['slides'])}장")
+
+    # lock 강제 덮어쓰기 (Opus가 lock 어겼을 때 보장)
+    if visual_mode_lock and parsed["visual_mode"] != visual_mode_lock:
+        print(f"[engineer] LOCK enforce: visual_mode {parsed['visual_mode']} → {visual_mode_lock}")
+        parsed["visual_mode"] = visual_mode_lock
+    if accent_lock and parsed["accent_color"].upper() != accent_lock.upper():
+        print(f"[engineer] LOCK enforce: accent_color {parsed['accent_color']} → {accent_lock}")
+        parsed["accent_color"] = accent_lock
 
     print(f"[engineer] visual_mode={parsed['visual_mode']} accent={parsed['accent_color']}")
     print(f"[engineer] rationale: {parsed.get('rationale', '')[:120]}")
@@ -1095,10 +1120,13 @@ def run_full(
     cost_limit_usd: float = 1.0,
     max_retry_per_slide: int = 1,
     skip_pipeline: bool = False,
+    visual_mode_lock: str | None = None,
+    accent_lock: str | None = None,
 ) -> str | None:
     """topic + essence → 8장 생성 → (선택적) DB+Slack 등록.
 
     skip_pipeline=True이면 round_dir만 생성하고 Storage 업로드·DB insert·Slack notify 스킵 (dogfooding 검수용).
+    visual_mode_lock / accent_lock 지정 시 다양성 가드 Hard 룰 override (사용자 명시 lock).
     Returns: idea_id (UUID) or None (skip_pipeline=True인 경우)
     """
     from src.db.client import db
@@ -1128,6 +1156,8 @@ def run_full(
         client_id=client_id,
         client_slug=client_slug,
         slides_copy=slides_copy,
+        visual_mode_lock=visual_mode_lock,
+        accent_lock=accent_lock,
     )
 
     # 3. round_dir 생성 + slides.json 보존 (caption 생성·to-pipeline 호환)
@@ -1374,6 +1404,13 @@ def _parse_args():
                         help="5개 본질 (한 줄씩, 5개)")
     p_full.add_argument("--visual-tone", default=None,
                         help="(옵션) 시각 톤 명시. 예: 'Gemini 컬러 청·분홍·녹'")
+    p_full.add_argument("--visual-mode", dest="visual_mode_lock", default=None,
+                        choices=_VISUAL_MODES,
+                        help="(옵션 lock) visual_mode 강제. 다양성 가드 override. "
+                             "v0.2.0 winner: landscape")
+    p_full.add_argument("--accent", dest="accent_lock", default=None,
+                        help="(옵션 lock) accent_color hex 강제 (예: '#3B6E47'). "
+                             "다양성 가드 override. v0.2.0 winner: #3B6E47")
     p_full.add_argument("--model", default="gpt-image-2",
                         choices=["gpt-image-1", "gpt-image-1.5", "gpt-image-2"])
     p_full.add_argument("--quality", default="medium", choices=["low", "medium", "high"])
@@ -1396,6 +1433,9 @@ if __name__ == "__main__":
         if len(args.essence) != 5:
             print("[err] --essence 정확히 5개 필요", file=sys.stderr)
             sys.exit(1)
+        if args.accent_lock and not args.accent_lock.startswith("#"):
+            print("[err] --accent는 hex 형식 (#XXXXXX) 필요", file=sys.stderr)
+            sys.exit(1)
         run_full(
             topic_angle=args.topic,
             essence_5=args.essence,
@@ -1405,6 +1445,8 @@ if __name__ == "__main__":
             quality=args.quality,
             cost_limit_usd=args.cost_limit,
             skip_pipeline=args.no_pipeline,
+            visual_mode_lock=args.visual_mode_lock,
+            accent_lock=args.accent_lock,
         )
     elif args.cmd == "to-pipeline":
         save_to_pipeline(client_slug=args.client, round_id=args.round_id)

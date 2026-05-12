@@ -1,0 +1,101 @@
+{
+  "topic_angle": "학사경고 받던 내가 AI 5개 활용해서 A+ 받은 5가지 비결",
+  "essence_5": [
+    "각 AI(Gemini/ChatGPT/Claude/NotebookLM)에 지침으로 나·과제·전공 컨텍스트 학습시키고 모든 질문·과제에 활용",
+    "수업 중 Gemini Live로 강의 실시간 받아쓰기 — 9시 1교시 졸려도 시험기간 백지 안 됨",
+    "시험 D-3 NotebookLM으로 족보 없이 객관식 20 + 서술형 5 예상문제 자동 생성",
+    "리포트 초안 Claude Project로 내 글 스타일 학습 → 교수 시각 첨삭 시뮬레이션 2회 반복",
+    "과제 마감 직전 NotebookLM에 강의자료 25개 박고 핵심 요약 + 인용 출처 자동 생성"
+  ],
+  "visual_tone_input": null,
+  "visual_mode": "landscape",
+  "accent_color": "#3B6E47",
+  "rationale": "recent에 movie_poster·portrait 사용됨 → landscape로 전환. nene_weekly가 캠퍼스 풍경+큰 한글 텍스트 박스로 1.2만 팔로워 돌파한 톤을 직접 흡수. 학사경고→A+ 반등 서사를 한국 대학 캠퍼스 자연광 풍경 8컷으로 구성. 색은 recent의 형광노랑·다크블루 회피, 캠퍼스 잔디·이른 봄 새벽 분위기와 어울리는 차분한 포레스트 그린 #3B6E47 채택 — 합격·성장·생명 메타포.",
+  "slides": [
+    {
+      "n": 1,
+      "role": "cover",
+      "headline": "학사경고에서 올A+까지",
+      "highlight": "올A+",
+      "subtext": "AI 5개로 한 학기 반등",
+      "label": "AI 공부법 5",
+      "prompt": "Slide 1 message: 학사경고 받던 학생이 한 학기 만에 올A+로 반등 → visual metaphor: 이른 새벽 한국 대학교 캠퍼스 본관 앞 잔디밭, 안개가 살짝 깔린 풍경에서 떠오르는 첫 햇살이 건물 윤곽을 황금색으로 물들이는 장면 (어둠에서 빛으로 = 학사경고에서 A+로의 반등). Medium specification: shot on a smartphone camera (iPhone-style candid photo) by a Korean university student walking to a morning class, slight motion blur on grass blades in foreground, vertical 1024x1024 crop from a real-feeling candid moment, no professional studio look. Lighting: cold dawn blue hour transitioning to warm golden hour, sun just cresting over the building roofline creating long soft shadows across the lawn. Camera angle: low eye-level from a person sitting on the lawn looking up at the academic building, slight upward tilt. Composition: rule of thirds with horizon at lower third, building silhouette occupying upper-right third, large negative space on left for text overlay, leading lines from the stone path drawing eye toward sunrise. Mood: hopeful, quiet determination, the morning after a long night of studying. Background details: a Korean university main hall (vaguely Seoul National University / Yonsei style architecture — red brick or grey stone with arched windows), bare cherry blossom branches just beginning to bud, a faint Korean university banner with blurred hangul text in distance, a closed laptop and a paper coffee cup resting on the grass in soft foreground bokeh. Color grade: muted teal shadows, warm amber highlights, overall a calm naturalistic palette dominated by forest green grass #3B6E47 and dawn peach sky. On the lower-left 60% of the canvas, display very large bold black Korean sans-serif (Pretendard Black style) headline text \"학사경고에서\\n올A+까지\" on a slightly translucent off-white rounded rectangle background so text is perfectly legible against the photo — text occupies roughly 55% of the visual area. The word \"올A+\" highlighted in forest green #3B6E47. Top-left small pill label in white background black text reading \"AI 공부법 5\". Below the headline a single subtext line in dark grey \"AI 5개로 한 학기 반등\". Hangul rendering must be pixel-perfect, no broken jamo, no garbled characters. No people's faces in this slide. Do not include any account handle or watermark — that will be added later.",
+      "highlight_repeat_check": "올A+"
+    },
+    {
+      "n": 2,
+      "role": "insight_1",
+      "headline": "AI마다 나를 먼저 학습시킨다",
+      "highlight": "나를",
+      "subtext": "전공·과제·문체 지침 고정",
+      "label": "비결 1",
+      "prompt": "Slide 2 message: Gemini·ChatGPT·Claude·NotebookLM 각각에 '나·전공·과제 컨텍스트'를 지침으로 학습시켜 모든 대화에 자동 반영 → visual metaphor: 한국 대학교 도서관 열람실 창가 자리에서 펼쳐놓은 노트와 펜, 그 위에 자기소개·전공·과제 목록을 손으로 적은 인덱스 카드 4장이 부채꼴로 펼쳐진 모습 (각 카드 = 각 AI에 박는 지침). Medium specification: candid smartphone photo style, shot from above looking down at the desk (overhead angle), slight asymmetric framing as if a student quickly snapped it before class, faint lens dust and natural depth of field. Lighting: soft afternoon daylight streaming through a tall library window from upper-left, warm window glow with cool ambient fill, gentle shadows from the cards. Camera angle: overhead top-down 80-degree tilt, slight off-center. Composition: centered cluster of 4 handwritten cards in lower-right two-thirds, negative space upper-left for headline, leading lines from notebook spirals. Mood: focused, methodical, the calm before a deep study session. Background details: a real Korean university library desk — wood grain, a half-finished iced americano in a transparent cup, a Korean textbook with hangul title slightly blurred (\"경영학원론\" or similar generic 전공 book), a black mechanical pencil, AirPods case. The 4 index cards each bear a tiny hand-drawn logo on top corner (a star for Claude, a 4-point diamond for Gemini, a circular swirl for ChatGPT, a notebook icon for NotebookLM) and below each logo handwritten Korean lines like \"전공: 경영\", \"과제 스타일: 개조식\", \"내 말투: 담백하게\". Color grade: forest green accent #3B6E47 on the Claude card edge highlight, otherwise warm neutral wood tones. On the upper-left 55% of canvas display large bold black hangul \"AI마다\\n나를 먼저\\n학습시킨다\" on a soft cream rounded rectangle, the word \"나를\" emphasized in forest green #3B6E47. Top-left small pill label \"비결 1\" white bg black text. Subtext below in smaller dark grey \"전공·과제·문체 지침 고정\". Hangul must render perfectly. No faces. No handle watermark.",
+      "highlight_repeat_check": "나를"
+    },
+    {
+      "n": 3,
+      "role": "insight_2",
+      "headline": "1교시 졸아도 강의는 받아쓴다",
+      "highlight": "받아쓴다",
+      "subtext": "Gemini Live 실시간 받아쓰기",
+      "label": "비결 2",
+      "prompt": "Slide 3 message: 9시 1교시 졸려도 Gemini Live가 강의를 실시간 받아써서 시험기간 백지 사고 방지 → visual metaphor: 한국 대학 강의실 뒷자리 시점, 앞쪽 칠판과 교수의 흐릿한 실루엣을 배경으로 책상 위에 놓인 안드로이드 스마트폰 화면에 한국어 강의 자막이 실시간으로 한 줄씩 흐르는 모습 (졸려도 기록은 진행). Medium specification: candid smartphone photo from a student's POV in a back-row seat, slight handheld shake, natural classroom ambient light, not staged. Lighting: cool fluorescent classroom overhead light combined with soft morning daylight from side windows, slight backlight on the lecturer silhouette creating rim light. Camera angle: low eye-level over the desk, phone in lower foreground sharp, classroom in soft background bokeh. Composition: leading lines from rows of desks converging toward the front lectern, phone screen anchored in lower-right third, large negative space upper-left for headline, rule of thirds. Mood: drowsy early morning, quiet resignation but with a backup plan working in the background. Background details: a real Korean university lecture hall — rows of attached fold-up desks, a projection screen with blurred PowerPoint slide showing partial hangul like \"3장 마케팅 환경\", scattered students with hoodies up and heads slightly down (faces not visible, only backs of heads and hoods), a half-empty water bottle, an opened notebook with nothing written. The phone screen displays a clean Gemini-style interface with a 4-point diamond logo top-left, a red recording dot, and three lines of fresh hangul transcript \"교수: 오늘은 STP 전략의 세 단계를...\" rendering crisply. Color grade: cool fluorescent shadows balanced with the warm phone screen glow, subtle forest green #3B6E47 accent on the recording UI element. On the upper-left 55% of canvas display large bold black hangul headline \"1교시 졸아도\\n강의는 받아쓴다\" on cream rounded rectangle, word \"받아쓴다\" in forest green #3B6E47. Top-left pill label \"비결 2\". Subtext \"Gemini Live 실시간 받아쓰기\" small dark grey. Perfect hangul. No identifiable faces. No watermark.",
+      "highlight_repeat_check": "받아쓴다"
+    },
+    {
+      "n": 4,
+      "role": "insight_3",
+      "headline": "시험 D-3 예상문제 25개 뽑는다",
+      "highlight": "25개",
+      "subtext": "NotebookLM 객관식+서술형 자동",
+      "label": "비결 3",
+      "prompt": "Slide 4 message: 시험 3일 전 NotebookLM에 강의자료 박아 객관식 20+서술형 5 = 25문항 예상문제 자동 생성, 족보 의존 종결 → visual metaphor: 카페 야간 창가 자리, 노트북 화면에 NotebookLM 인터페이스로 자동 생성된 예상문제 리스트가 길게 펼쳐져 있고 그 옆에 형광펜과 메모지가 흩어진 D-3 시험기간 풍경. Medium specification: candid smartphone photo by a student taking a quick break to document the moment, slight reflection on the laptop screen, real-feeling not studio. Lighting: warm cafe tungsten pendant lights creating amber pools, cool blue night exterior visible through window behind the laptop, mixed temperature lighting for cinematic contrast. Camera angle: slightly above eye-level looking down across the table toward the laptop screen (45-degree overhead-ish), screen partially angled toward camera so its content is readable. Composition: laptop screen anchored center-right, headline negative space upper-left, leading lines from table edge and the row of cafe windows, rule of thirds. Mood: late-night focused grind, slight tension of countdown but with control. Background details: a real Korean cafe interior at night — wooden table, a tumbler with iced black coffee, scattered post-it notes with hangul scribbles like \"D-3\", \"챕터 4 약함\", a yellow highlighter cap, a printed lecture handout with hangul title \"경영전략 4장\" blurred in background, exterior window showing softly blurred Seoul street lights. The laptop screen shows a clean NotebookLM-style interface: left sidebar with 25 source documents listed (small hangul filenames), main panel displaying a generated question list — numbered 1 through 5 visible with hangul question text like \"1. 포터의 5 forces 모델에서...\", a small badge top-right reading \"객관식 20 · 서술형 5\". Color grade: warm amber highlights, cool teal shadows from the window, forest green #3B6E47 accent on the NotebookLM generate button UI. On the upper-left 55% of canvas display large bold black hangul headline \"시험 D-3\\n예상문제 25개\\n뽑는다\" on cream rounded rectangle, the number \"25개\" emphasized in forest green #3B6E47. Top-left pill label \"비결 3\". Subtext \"NotebookLM 객관식+서술형 자동\". Perfect hangul rendering. No people visible. No handle watermark.",
+      "highlight_repeat_check": "25개"
+    },
+    {
+      "n": 5,
+      "role": "insight_4",
+      "headline": "교수 시각으로 두 번 첨삭한다",
+      "highlight": "두 번",
+      "subtext": "Claude Project 글스타일 학습",
+      "label": "비결 4",
+      "prompt": "Slide 5 message: 리포트 초안을 Claude Project에 내 글 스타일을 학습시킨 뒤 교수 시각으로 시뮬레이션 첨삭을 2회 반복 → visual metaphor: 책상 위에 출력한 리포트 두 부가 나란히 놓여있고 한 부는 빨간 펜으로 첨삭 자국이 가득, 다른 한 부는 깨끗한 최종본, 옆에 노트북에 Claude 화면이 켜진 비교 구도 (1차 vs 2차 첨삭). Medium specification: candid overhead smartphone photo, flat-lay style but slightly tilted (not perfectly top-down — more like 30-degree handheld), real desk clutter not props. Lighting: soft warm desk lamp from upper-right casting gentle directional light, slight ambient room fill from window left, no harsh shadows. Camera angle: overhead 70-degree tilt looking down at the desk surface. Composition: two report papers side-by-side in lower two-thirds creating clear left-right comparison (left=red-marked, right=clean), laptop in upper-right corner with Claude interface visible, headline negative space upper-left, leading lines from paper edges. Mood: methodical refinement, the satisfaction of iteration. Background details: realistic Korean university dorm-room desk — light oak surface, a transparent acrylic ruler, a red ballpoint pen lying across the first report, the first report titled in hangul \"마케팅 전략 분석 — 초안\" with visible red circles and margin comments in hangul like \"근거 약함\", \"출처?\", the second report titled \"마케팅 전략 분석 — 최종\" looking clean and printed in serif hangul body text. Laptop screen partially visible showing a Claude-style chat interface with the orange star icon top-left and a chat bubble in hangul \"교수님 시각으로 다시 보면, 2장 근거가 부족합니다...\". Color grade: warm neutral paper tones, forest green #3B6E47 accent on a small sticky note flag, red pen as the only saturated red. On the upper-left 50% of canvas display large bold black hangul headline \"교수 시각으로\\n두 번 첨삭한다\" on cream rounded rectangle, words \"두 번\" emphasized in forest green #3B6E47. Top-left pill label \"비결 4\". Subtext \"Claude Project 글스타일 학습\". Pixel-perfect hangul. No human hands or faces. No watermark.",
+      "highlight_repeat_check": "두 번"
+    },
+    {
+      "n": 6,
+      "role": "insight_5",
+      "headline": "강의자료 25개 한 번에 요약한다",
+      "highlight": "한 번에",
+      "subtext": "NotebookLM 인용 출처까지",
+      "label": "비결 5",
+      "prompt": "Slide 6 message: 과제 마감 직전 NotebookLM에 강의자료 25개를 한꺼번에 박아 핵심 요약 + 인용 출처를 자동 생성 → visual metaphor: 한국 대학교 도서관 책상에 25권 분량의 강의자료 인쇄물과 파일이 쌓인 탑 옆에, 노트북 화면에는 NotebookLM이 그 모든 자료를 한 페이지 요약과 출처 각주로 정리해 보여주는 대비 구도 (혼돈 → 질서). Medium specification: candid smartphone photo of a desk corner in a Korean university library at the deadline-eve hour, real-feeling clutter, slight motion blur on the top of the paper stack as if just put down. Lighting: cool overhead library fluorescents combined with the laptop screen glow, slight blue tint, late-night atmosphere. Camera angle: medium-low eye-level from the desk edge looking across at the paper stack and the laptop side-by-side, slight dutch tilt for visual energy. Composition: leaning paper stack occupies left third (tall vertical mass = the chaos), laptop screen occupies right third (the order), headline negative space upper third, leading lines from desk edge and paper edges converging toward laptop. Mood: relief after pressure, the moment chaos collapses into clarity. Background details: a real Korean library carrel — wooden divider walls visible behind, a row of other students' desks softly blurred in distance, a worn-out backpack on the floor edge, several colored sticky tabs sticking out from the paper stack at varying heights, the topmost printout showing hangul title \"마케팅 원론 — 5주차 자료\". The laptop screen shows NotebookLM interface: left sidebar listing 25 source files with small icons, main panel showing a clean bullet-point summary in hangul with small superscript citation numbers ⁽¹⁾⁽²⁾⁽³⁾ linking to sources, a header reading \"핵심 요약 + 출처\". Color grade: cool teal library shadows balanced with warm laptop screen, forest green #3B6E47 accent on a folder tab and the NotebookLM citation badges. On the upper-left 55% of canvas display large bold black hangul headline \"강의자료 25개\\n한 번에 요약한다\" on cream rounded rectangle, words \"한 번에\" emphasized in forest green #3B6E47. Top-left pill label \"비결 5\". Subtext \"NotebookLM 인용 출처까지\". Hangul rendering must be flawless. No people. No watermark.",
+      "highlight_repeat_check": "한 번에"
+    },
+    {
+      "n": 7,
+      "role": "case",
+      "headline": "한 학기 학점이 1.8에서 4.3",
+      "highlight": "1.8→4.3",
+      "subtext": "AI 5개 루틴 12주 결과",
+      "label": "실제 결과",
+      "prompt": "Slide 7 message: 학사경고선 1.8에서 한 학기 만에 올A+급 4.3까지 점프 — 5개 AI 루틴의 12주 실증 결과 → visual metaphor: 한국 대학교 캠퍼스 안 잔디 언덕길에서 멀리 정문을 향해 걸어 올라가는 발자국이 보이는 풍경 사진 위에 학점 비교 카드 두 개가 떠 있는 구도 (이전 성적표 vs 이번 성적표). Medium specification: candid smartphone photo of a campus pathway in late spring afternoon, real-feeling lived perspective, slight handheld tilt. Lighting: warm late-afternoon golden hour from low angle behind the viewer, long shadows stretching forward on the path, soft glow on green leaves. Camera angle: low eye-level walking-POV, slight upward angle along the rising pathway. Composition: leading lines from the stone path drawing eye from foreground bottom-center up toward the distant gate building in upper-center, rule of thirds, negative space sky upper portion for headline. Mood: quiet triumph, the steady arrival after a long climb. Background details: a real-feeling Korean university campus — stone steps with worn edges, fresh green spring foliage on either side of the path, a banner with blurred hangul congratulating something academic, a few students in distance walking with backpacks (faces not visible, only silhouettes from behind). Floating in the mid-frame as if two phone-screenshot cards overlaid on the photo: card 1 (left, slightly faded) showing a Korean university transcript-style layout with hangul header \"이전 학기\" and a prominent GPA \"1.8 / 4.5\" with several rows of D and F grades visible in small hangul, card 2 (right, vivid) with hangul header \"이번 학기\" and a prominent GPA \"4.3 / 4.5\" with rows of A+ and A grades. A subtle curved arrow in forest green #3B6E47 connects card 1 to card 2 suggesting the leap. Color grade: warm golden hour highlights, deep forest green #3B6E47 dominant in foliage, transcript cards in cream with black hangul text. On the upper portion of canvas (top 35%) display large bold black hangul headline \"한 학기 학점이\\n1.8에서 4.3\" on cream rounded rectangle, the figures \"1.8→4.3\" emphasized in forest green #3B6E47 with the arrow inside the highlighted text. Top-left pill label \"실제 결과\". Subtext \"AI 5개 루틴 12주 결과\". Perfect hangul, the digits 1.8 and 4.3 must render crisply. No identifiable faces. No watermark.",
+      "highlight_repeat_check": "1.8→4.3"
+    },
+    {
+      "n": 8,
+      "role": "cta",
+      "headline": "저장하고 다음 시험에 그대로 써",
+      "highlight": "저장",
+      "subtext": "댓글 남기면 지침 DM 드려요",
+      "label": "다음 시험 대비",
+      "prompt": "Slide 8 message: 이 5개 루틴을 저장해뒀다가 다음 시험기간에 그대로 적용, 댓글 남기면 4개 AI 지침 텍스트 DM 전송 → visual metaphor: 늦은 오후 한국 대학 캠퍼스의 일몰 풍경 위에 인스타그램 저장 아이콘과 DM 말풍선이 떠 있는 마무리 컷, 다음 학기를 향한 다짐. Medium specification: candid smartphone photo of a sunset view from a campus rooftop or hill overlooking the city, real-feeling not staged, slight haze. Lighting: warm pink-orange sunset on the horizon transitioning to cool deep blue upper sky, soft diffused light overall, silhouetted building rooflines. Camera angle: eye-level wide landscape orientation cropped to square, horizon at lower third. Composition: rule of thirds with horizon at lower third, sky occupying upper two-thirds for headline overlay, silhouette of campus buildings and distant Seoul cityscape as lower anchor, a single visible streetlight just turning on creating a small bright point. Mood: contemplative end-of-day reflection, the moment of deciding to save and apply later. Background details: layered city silhouette of a Korean university district at dusk — academic building rooftops with rooftop water tanks, a few warm window lights starting to glow in dorm buildings, distant mountain ridgeline barely visible in haze, no people. Floating in mid-canvas: a clean iOS-style notification card mockup with the Instagram bookmark/save icon in black and small hangul \"저장됨\" beneath it, and slightly behind it a chat-bubble card with hangul text \"댓글 → AI 지침 DM\" in friendly rounded style. Color grade: warm pink-amber horizon, cool teal upper sky, forest green #3B6E47 accent only on the save icon outline and the chat bubble accent — keeping it disciplined to one accent color. On the upper-center 50% of canvas display large bold black hangul headline \"저장하고\\n다음 시험에\\n그대로 써\" on a softly translucent cream rounded rectangle, the word \"저장\" emphasized in forest green #3B6E47. Top-left pill label \"다음 시험 대비\". Subtext at bottom in dark grey \"댓글 남기면 지침 DM 드려요\". Perfect hangul rendering, no broken jamo. No identifiable faces. No account handle text in the image — that gets added later by the wrapper.",
+      "highlight_repeat_check": "저장"
+    }
+  ],
+  "client_slug": "fit_ai_founder",
+  "model": "gpt-image-2",
+  "quality": "medium",
+  "round_id": "20260512_014908",
+  "generated_at": "2026-05-11T16:49:08.549589+00:00"
+}
