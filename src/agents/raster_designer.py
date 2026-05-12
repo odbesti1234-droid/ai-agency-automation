@@ -1596,8 +1596,12 @@ def save_to_pipeline(
     inserted = db.insert("content_ideas", row)
     print(f"  inserted id={inserted['id']}")
 
-    print(f"[5/5] Slack notify_design_ready 발송 (캡션+CTA+노션 포함)...")
+    print(f"[5/5] Slack notify_design_ready 발송 (캡션+CTA+가이드 미리보기+노션 포함)...")
     cta_slide = next((s for s in metadata["slides"] if s["role"] == "cta"), metadata["slides"][-1])
+    guide_preview = [
+        {"n": s["n"], "title": s["title"], "preview": s["body"][:120].strip()}
+        for s in guide_sections
+    ]
     notify_design_ready(
         client_name=client_slug,
         ideas=[{
@@ -1614,6 +1618,7 @@ def save_to_pipeline(
                 "subtext": cta_slide.get("subtext", ""),
                 "label": cta_slide.get("label", ""),
             },
+            "guide_preview": guide_preview,
         }],
         webhook_url=slack_webhook,
     )

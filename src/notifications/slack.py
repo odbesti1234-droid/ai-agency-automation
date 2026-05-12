@@ -230,12 +230,26 @@ def notify_design_ready(
                 "text": {"type": "mrkdwn", "text": f"*📝 인스타 캡션 ({len(caption)}자)*\n```{caption[:2800]}```"},
             })
 
+        # DM 가이드 5섹션 미리보기 (raster pipeline에서 guide_preview 넘기면 표시)
+        guide_preview = idea.get("guide_preview")
+        if guide_preview and isinstance(guide_preview, list):
+            preview_lines = []
+            for s in guide_preview:
+                n = s.get("n", "?")
+                t = s.get("title", "")
+                p = s.get("preview", "")
+                preview_lines.append(f"*{n}. {t}*\n{p}…")
+            blocks.append({
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": "*💌 DM 가이드 미리보기 (각 섹션 첫 100자)*\n\n" + "\n\n".join(preview_lines)},
+            })
+
         # Notion 브리프 링크
         notion_url = idea.get("notion_url")
         if notion_url:
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"📄 *Notion 브리프 (캡션·CTA·이미지 통합):* <{notion_url}|콘텐츠 문서 열기>"},
+                "text": {"type": "mrkdwn", "text": f"📄 *DM 가이드 전문 (노션):* <{notion_url}|독자 응답용 본문 열기>"},
             })
 
         # 승인/거부 버튼
