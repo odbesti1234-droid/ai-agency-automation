@@ -716,3 +716,138 @@ def notify_token_expired(
         },
     ]
     return send(text, blocks=blocks, webhook_url=webhook_url)
+
+
+def notify_review_result(
+    client_name: str,
+    idea_id: str,
+    verdict: str,
+    one_line: str,
+    weaknesses_top3: list[dict] | None = None,
+    kpi_predictions: list[dict] | None = None,
+    suggestions: list[str] | None = None,
+    carousel_urls: list[str] | None = None,
+    video_url: str | None = None,
+    webhook_url: str | None = None,
+) -> bool:
+    """instagram-algo-coach 사전 검수 결과 → 슬랙 카드.
+
+    PD 스킬(instagram-pd)이 raster_designer / reels-agent 호출 후 ig-review로
+    검수받은 결과를 사용자가 슬랙에서 바로 확인할 수 있도록 발송.
+
+    Args:
+        client_name: 클라이언트 표시명
+        idea_id: content_ideas.id (검수 대상 매칭용)
+        verdict: "GO" | "FIX" | "NO-GO" | "NO_BASELINE"
+        one_line: 판정 사유 1줄 요약
+        weaknesses_top3: [{"code": "N1", "label": "...", "evidence": "..."}, ...]
+        kpi_predictions: [{"name": "K1 AWT", "predicted": "6.5s", "p50": "8.2", "verdict": "BELOW_P50"}, ...]
+        suggestions: ["워터마크 제거", ...] 권장 수정안 (선택)
+        carousel_urls: 카드뉴스 8장 PNG public URL 리스트 (한 카드 안에 inline image block으로 박힘)
+        video_url: 릴스 mp4 public URL (Slack auto-unfurl)
+        webhook_url: 클라이언트별 웹훅. 없으면 SLACK_WEBHOOK_URL.
+
+    Returns:
+        Slack 전송 성공 여부.
+    """
+    verdict_emoji = {
+        "GO": "✅",
+        "FIX": "⚠️",
+        "NO-GO": "🚨",
+        "NO_BASELINE": "❓",
+    }.get(verdict, "•")
+
+    verdict_label = {
+        "GO": "GO — 게시 가능",
+        "FIX": "FIX — 수정 권장",
+        "NO-GO": "NO-GO — 게시 보류",
+        "NO_BASELINE": "데이터 부족 — 보류 (/ig-baseline 먼저)",
+    }.get(verdict, verdict)
+
+    text = f"{verdict_emoji} *[{client_name}] 검수 결과: {verdict_label}* (idea_id={idea_id[:8]})"
+
+    blocks: list[dict] = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{verdict_emoji} {verdict_label}", "emoji": True},
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*판정 사유:*\n{one_line}"},
+        },
+    ]
+
+    if weaknesses_top3:
+        lines = ["*약점 TOP 3:*"]
+        for i, w in enumerate(weaknesses_top3, 1):
+            code = w.get("code", "?")
+            label = w.get("label", "")
+            evidence = w.get("evidence", "")
+            line = f"{i}. `[{code}]` *{label}*"
+            if evidence:
+                line += f"\n   → {evidence}"
+            lines.append(line)
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+        })
+
+    if suggestions:
+        sug_lines = ["*권장 수정안:*"] + [f"• {s}" for s in suggestions]
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(sug_lines)},
+        })
+
+    if kpi_predictions:
+        kpi_lines = ["*KPI 예측 (baseline 대비):*"]
+        for kpi in kpi_predictions:
+            name = kpi.get("name", "?")
+            predicted = kpi.get("predicted", "?")
+            p50 = kpi.get("p50", "?")
+            v = kpi.get("verdict", "?")
+            kpi_lines.append(f"• `{name}` 예측={predicted} (P50={p50}) → *{v}*")
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": "\n".join(kpi_lines)},
+        })
+
+    # 카드뉴스 8장 carousel — 검수 카드 안에 inline image block 8개
+    if carousel_urls:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*🖼️ 검수 대상 슬라이드 {len(carousel_urls)}장*"},
+        })
+        for i, url in enumerate(carousel_urls[:10], 1):
+            clean = url.split("?")[0]
+            if url.startswith("https://") and (clean.endswith(".png") or clean.endswith(".jpg") or clean.endswith(".jpeg")):
+                blocks.append({
+                    "type": "image",
+                    "image_url": url,
+                    "alt_text": f"검수 대상 slide {i}",
+                    "title": {"type": "plain_text", "text": f"Slide {i}/{len(carousel_urls)}"},
+                })
+
+    # 릴스 영상 — Slack auto-unfurl link
+    if video_url:
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*🎬 검수 대상 영상:* <{video_url}|미리보기 / 다운로드>"},
+        })
+
+    blocks.append({
+        "type": "context",
+        "elements": [{
+            "type": "mrkdwn",
+            "text": (
+                "_Meta 공식 시그널 + 채널 baseline 기반 예측. 실제 도달은 시간대·트렌드에 따라 변함._\n"
+                f"_idea_id: `{idea_id}` · /ig-followup 으로 7일 후 정확도 확인 권장_"
+            ),
+        }],
+    })
+
+    if webhook_url:
+        return send(text, blocks=blocks, webhook_url=webhook_url)
+    return post_to_intake_channel(text, blocks=blocks)

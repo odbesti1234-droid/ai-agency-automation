@@ -29,6 +29,11 @@ Thumbs.db
 
 # Claude / local
 .claude/local/
+.claude/settings.local.json
+.claude/worktrees/
+
+# 작업용 이미지 산출물 (루트) — 코드 아님, 추적 제외
+/planb_*.png
 
 # Railway
 railway.env
